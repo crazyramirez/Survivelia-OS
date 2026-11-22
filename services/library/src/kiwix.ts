@@ -95,7 +95,8 @@ export class KiwixClient {
   }
 
   async books(): Promise<ZimBook[]> {
-    return parseCatalog(await this.get('/catalog/v2/entries?count=-1', 3000), this.rootPath)
+    // Con decenas de libros (y kiwix-serve recargando la biblioteca tras una descarga) 3 s se quedaba corto.
+    return parseCatalog(await this.get('/catalog/v2/entries?count=-1', 6000), this.rootPath)
   }
 
   async search(query: string, books: ZimBook[], perBook: number): Promise<SearchHit[]> {

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.1 — 2026-11-22 · Libros descargados que no salían en la biblioteca
+
+### Corregido
+- **Libros (Wikipedia, iFixit…) descargados y marcados como instalados que no aparecían en la biblioteca ni en
+  Inicio** (portable de Windows y Linux). Si una descarga se cortaba justo al terminar (al verificar el SHA-256 de un
+  fichero de muchos GB, o al cerrar Survivelia OS en ese momento), el libro quedaba en disco sin registrar en la
+  biblioteca de Kiwix, y la siguiente «Descargarlo todo» lo daba por instalado sin registrarlo nunca.
+  - Al abrir Survivelia OS y antes de cada descarga, la biblioteca se pone de acuerdo con los libros que hay en disco:
+    registra los que faltan y quita los registros sin fichero. **Las instalaciones afectadas se arreglan solas** al
+    abrir la versión nueva.
+  - Un libro descargado pero sin verificar se verifica y se registra en la siguiente descarga, en lugar de darse por
+    instalado.
+- Un servicio que se caía de vez en cuando durante una sesión larga (p. ej. horas de descargas) se quedaba parado
+  para siempre tras cinco caídas sueltas; ahora el contador vuelve a cero cuando lleva un rato funcionando.
+- La lista de libros espera hasta 6 s a Kiwix (antes 3 s), que se quedaba corto con decenas de libros.
+
 ## 0.14.0 — 2026-11-19 · Alemán, chino y japonés
 
 ### Añadido

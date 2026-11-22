@@ -225,8 +225,10 @@ function launch(name, cmd, args, env, { ipc = false, cwd = DATA, onState = null 
   }
   let restarts = 0
   let stopped = false
+  let startedAt = 0
   const start = () => {
     tail = ''
+    startedAt = Date.now()
     onState?.('starting', { restarts })
     const child = spawn(cmd, args, {
       env: { ...process.env, ...env },
@@ -239,6 +241,9 @@ function launch(name, cmd, args, env, { ipc = false, cwd = DATA, onState = null 
     if (ipc) child.on('message', onMessage)
     child.on('exit', (code, signal) => {
       if (stopping || stopped) return
+      // Las caídas cuentan seguidas: tras un rato funcionando bien, el contador vuelve a cero. Si no, en una sesión
+      // larga (p. ej. horas de «Descargarlo todo») cinco caídas sueltas dejaban el servicio parado hasta reabrir.
+      if (Date.now() - startedAt > 60_000) restarts = 0
       onState?.('exited', { code, signal, tail, final: restarts >= 5 })
       write(`\n[launcher] ${name} terminó (code=${code}, signal=${signal})\n`)
       if (restarts >= 5) {
@@ -648,10 +653,30 @@ function syncOptional() {
     optional.set(name, { sig: spec.sig, handle: launch(name, spec.cmd, spec.args, libEnv, { cwd: spec.cwd, onState }) })
   }
 }
+/**
+ * Pone library.xml de acuerdo con los ZIM de data/library/zim antes de arrancar kiwix-serve: un libro descargado
+ * pero sin registrar (descarga cortada justo al terminar) salía «instalado» y no aparecía en la biblioteca.
+ */
+async function repairLibrary() {
+  if (!key) return
+  try {
+    const { syncLibrary } = await import('../scripts/content-engine.mjs')
+    const zimDir = join(DATA, 'library', 'zim')
+    const r = syncLibrary({ zimDir, libraryXml: join(zimDir, 'library.xml'), componentsDir: join(ROOT, 'runtime', key), kiwixManage: null, owner: null })
+    if (r.added.length) say(`Biblioteca: registrados ${r.added.length} libro(s) que faltaban`)
+    if (r.removed.length) say(`Biblioteca: quitados ${r.removed.length} registro(s) sin fichero`)
+    if (r.failed.length) say(`Biblioteca: no se pudieron registrar (¿dañados?): ${r.failed.join(', ')}`)
+  } catch (err) {
+    say(`Biblioteca: ${err instanceof Error ? err.message : err}`)
+  }
+}
+
 // En la autoprueba solo cuenta el núcleo: ni Wikipedia ni el asistente (cargar un modelo tarda y no se usa).
 if (!SELF_TEST) {
-  syncOptional()
-  setInterval(syncOptional, 10_000).unref()
+  void repairLibrary().finally(() => {
+    syncOptional()
+    setInterval(syncOptional, 10_000).unref()
+  })
 }
 
 process.on('SIGINT', () => stop(0))

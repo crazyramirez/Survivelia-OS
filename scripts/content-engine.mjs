@@ -19,7 +19,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { statfs } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { countryLand, countryMaxZoom, countryName, countryZones, estimateMapBytes, ROUTING_TILE_BYTES, routingTiles } from './country-maps.mjs'
 import { extractZip } from './zip.mjs'
@@ -367,6 +367,72 @@ function libraryCall(paths, args) {
   return r.stdout
 }
 
+const xmlAttr = (tag, name) =>
+  (new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? '')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+
+/** Libros registrados en library.xml: [{ id, path }] con la ruta absoluta (kiwix-manage la guarda relativa). */
+export function libraryBooks(libraryXml) {
+  let xml = ''
+  try {
+    xml = readFileSync(libraryXml, 'utf8')
+  } catch {
+    return []
+  }
+  const books = []
+  for (const m of xml.matchAll(/<book\s[^>]*>/g)) {
+    const id = xmlAttr(m[0], 'id')
+    const path = xmlAttr(m[0], 'path')
+    if (id && path) books.push({ id, path: resolve(dirname(libraryXml), path) })
+  }
+  return books
+}
+
+/**
+ * Pone library.xml de acuerdo con los ZIM de la carpeta: registra los que falten y quita los registros de la carpeta
+ * cuyo fichero ya no existe. kiwix-serve solo enseña lo registrado, así que un ZIM descargado pero sin registrar
+ * (descarga cortada entre el fin de la descarga y el registro, o un registro fallido) salía «instalado» en el
+ * catálogo y no aparecía en la biblioteca. Los ZIM que kiwix-manage no puede abrir (dañados) se dejan sin registrar.
+ * → { added: [ficheros], removed: [ids], failed: [ficheros] }
+ */
+export function syncLibrary(paths) {
+  const res = { added: [], removed: [], failed: [] }
+  if (!kiwixManage(paths) || !existsSync(paths.zimDir)) return res
+  const key = (p) => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p))
+  const inDir = (p) => key(dirname(p)) === key(paths.zimDir)
+  const books = libraryBooks(paths.libraryXml)
+  // Registros sin fichero: los de esta carpeta, y los que apuntan mal (ruta relativa mal calculada) a un ZIM que
+  // sí está en la carpeta; ese se vuelve a registrar abajo con la ruta buena.
+  const stale = (b) => !existsSync(b.path) && (inDir(b.path) || existsSync(join(paths.zimDir, basename(b.path))))
+  for (const b of books) {
+    if (!stale(b)) continue
+    try {
+      libraryCall(paths, ['remove', b.id])
+      res.removed.push(b.id)
+    } catch (err) {
+      warn(String(err instanceof Error ? err.message : err))
+    }
+  }
+  const have = new Set(books.filter((b) => !stale(b)).map((b) => key(b.path)))
+  for (const f of readdirSync(paths.zimDir)) {
+    const full = join(paths.zimDir, f)
+    if (!f.endsWith('.zim') || have.has(key(full))) continue
+    try {
+      libraryCall(paths, ['add', full])
+      res.added.push(f)
+    } catch (err) {
+      res.failed.push(f)
+      warn(String(err instanceof Error ? err.message : err))
+    }
+  }
+  if (res.added.length || res.removed.length) own(paths, paths.libraryXml)
+  return res
+}
+
 function writeManifest(paths, entry) {
   let m = { schemaVersion: 1, entries: [] }
   try {
@@ -390,32 +456,41 @@ async function installZim(catalog, paths, item, variant) {
   if (!z) throw new Error(`${item.zim.name}:${flavour} no está en el catálogo de Kiwix`)
   const file = z.url.split('/').pop()
   const dest = join(paths.zimDir, file)
-  if (existsSync(dest)) {
-    say(`${item.title}: ya instalado (${file})`)
-    setItem(paths, item.id, { state: 'installed', file, version: z.updated, bytes: statSync(dest).size, variant: flavour })
-    return
-  }
-  const have = existsSync(`${dest}.part`) ? statSync(`${dest}.part`).size : 0
-  const free = await freeBytes(paths.zimDir)
-  if (z.size && z.size - have + 2 * GiB > free) throw new Error(`sin espacio: necesita ${fmt(z.size)} + 2 GiB de margen, libres ${fmt(free)}`)
   const rel = `zim/${z.url.split('/zim/')[1]}`
-  say(`${item.title}: descargando ${file} (${fmt(z.size)})`)
-  setItem(paths, item.id, { state: 'downloading', file, total: z.size, done: have, variant: flavour, error: null })
-  let lastSave = 0
-  await download(
-    catalog.sources.kiwixMirrors.map((m) => `${m}/${rel}`),
-    dest,
-    {
-      total: z.size,
-      label: item.title,
-      onBytes: (done) => {
-        if (Date.now() - lastSave > 5000) {
-          lastSave = Date.now()
-          setItem(paths, item.id, { done })
-        }
+  if (existsSync(dest)) {
+    const prev = readState(paths).items?.[item.id]
+    if (prev?.state === 'installed' && prev.file === file) {
+      // Ya verificado; por si se perdió el registro en library.xml.
+      syncLibrary(paths)
+      say(`${item.title}: ya instalado (${file})`)
+      setItem(paths, item.id, { state: 'installed', file, version: z.updated, bytes: statSync(dest).size, variant: flavour })
+      return
+    }
+    // Descargado pero sin terminar (verificación o registro cortados): se verifica y se registra ahora.
+    say(`${item.title}: ya descargado (${file}); falta verificarlo`)
+    setItem(paths, item.id, { file, total: z.size, variant: flavour, error: null })
+  } else {
+    const have = existsSync(`${dest}.part`) ? statSync(`${dest}.part`).size : 0
+    const free = await freeBytes(paths.zimDir)
+    if (z.size && z.size - have + 2 * GiB > free) throw new Error(`sin espacio: necesita ${fmt(z.size)} + 2 GiB de margen, libres ${fmt(free)}`)
+    say(`${item.title}: descargando ${file} (${fmt(z.size)})`)
+    setItem(paths, item.id, { state: 'downloading', file, total: z.size, done: have, variant: flavour, error: null })
+    let lastSave = 0
+    await download(
+      catalog.sources.kiwixMirrors.map((m) => `${m}/${rel}`),
+      dest,
+      {
+        total: z.size,
+        label: item.title,
+        onBytes: (done) => {
+          if (Date.now() - lastSave > 5000) {
+            lastSave = Date.now()
+            setItem(paths, item.id, { done })
+          }
+        },
       },
-    },
-  )
+    )
+  }
   setItem(paths, item.id, { state: 'verifying', done: z.size })
   const expected = await fetchText(`${catalog.sources.kiwixMaster}/${rel}.sha256`).then((t) => t.trim().split(/\s+/)[0], () => null)
   if (!/^[0-9a-f]{64}$/.test(expected ?? '')) throw new Error(`no se pudo obtener el SHA-256 de ${file}`)
@@ -765,6 +840,13 @@ export function findItem(catalog, id) {
 /** Instala una lista de "id" o "id:variante" en orden; sigue con el resto si uno falla. */
 export async function install(catalog, paths, specs) {
   let failed = 0
+  try {
+    const fix = syncLibrary(paths)
+    if (fix.added.length) say(`Biblioteca: registrados ${fix.added.length} libro(s) que faltaban`)
+    if (fix.removed.length) say(`Biblioteca: quitados ${fix.removed.length} registro(s) sin fichero`)
+  } catch (err) {
+    warn(`Biblioteca: ${err instanceof Error ? err.message : err}`)
+  }
   for (const spec of specs) {
     const [id, variant] = spec.split(':')
     let item = findItem(catalog, id)

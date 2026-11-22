@@ -1,9 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ContentCatalogItem } from '@survival-os/shared-types'
 import { FREE_MARGIN, autoFit, downloadPlan, orderForInstall, orderPlan, type ContentLang } from '../app/utils/content'
 // @ts-expect-error módulo .mjs sin tipos
-import { platformKey, profilePaths } from '../../../scripts/content-engine.mjs'
+import { libraryBooks, platformKey, profilePaths, syncLibrary } from '../../../scripts/content-engine.mjs'
 
 const GB = 1024 ** 3
 const catalog = JSON.parse(readFileSync(new URL('../../../content/catalog.json', import.meta.url), 'utf8'))
@@ -226,5 +228,35 @@ describe('fichas «Más información» (content/catalog-details, catalog-kiwix)'
   it('cada biblioteca Kiwix tiene sus datos oficiales (node scripts/fetch-kiwix-meta.mjs)', () => {
     const kiwix = read('catalog-kiwix.json').items as Record<string, { date: string | null }>
     for (const i of catalog.items.filter((x: { zim?: unknown }) => x.zim)) expect(kiwix[i.id]?.date, i.id).toBeTruthy()
+  })
+})
+
+describe('registro de los ZIM en library.xml', () => {
+  it('lee los libros con su ruta absoluta (kiwix-manage la guarda relativa a library.xml)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sv-lib-'))
+    try {
+      const xml = join(dir, 'library.xml')
+      writeFileSync(
+        xml,
+        '﻿<library version="20110515">\n  <book id="a-1" path="wiki_es_2025-01.zim" title="Wiki &amp; más" favicon="iVBOR"/>\n  <book id="b-2" path="sub/otro_2024-02.zim" />\n</library>\n',
+      )
+      expect(libraryBooks(xml)).toEqual([
+        { id: 'a-1', path: join(dir, 'wiki_es_2025-01.zim') },
+        { id: 'b-2', path: join(dir, 'sub', 'otro_2024-02.zim') },
+      ])
+      expect(libraryBooks(join(dir, 'no-existe.xml'))).toEqual([])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('sin kiwix-manage no toca nada', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sv-lib-'))
+    try {
+      writeFileSync(join(dir, 'x_2025-01.zim'), '')
+      const r = syncLibrary({ zimDir: dir, libraryXml: join(dir, 'library.xml'), componentsDir: join(dir, 'nada'), kiwixManage: null, owner: null })
+      expect(r).toEqual({ added: [], removed: [], failed: [] })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
