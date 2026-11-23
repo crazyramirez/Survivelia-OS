@@ -41,6 +41,7 @@ type Engine = {
 type Apply = {
   applyUpdate: (root: string, pid: number, o: Record<string, unknown>) => Promise<{ ok: boolean; version: string | null; message: string | null }>
   leftoverProcesses: (root: string, o: Record<string, unknown>) => { pid: number; exe: string }[]
+  rescueOld: (root: string, old: string) => Promise<void>
 }
 
 const scripts = (f: string): string => fileURLToPath(new URL(`../../../scripts/${f}`, import.meta.url))
@@ -392,6 +393,37 @@ describe('apply-update: autoprueba y vuelta atrás (portable)', () => {
     const list = apply.leftoverProcesses(String.raw`C:\Users\Ana\Survivelia OS`, { platform: 'win32', run, self: 13 })
     expect(list.map((p) => p.pid)).toEqual([10, 11])
     expect(apply.leftoverProcesses('/home/ana/Survivelia OS', { platform: 'linux', run })).toEqual([])
+  })
+
+  it('si la vuelta atrás no puede devolver una carpeta, NO la borra: queda en .update-rescue', async () => {
+    const root = prepared('rescate')
+    const base = path.join(root, '.update', 'staging', 'Survivelia OS')
+    const r = await apply.applyUpdate(root, 0, {
+      relaunchAfter: false,
+      data: path.join(root, 'data'),
+      leftoversImpl: () => [],
+      // Ocupa el sitio al que tiene que volver runtime/ nuevo: la vuelta atrás no puede moverlo ni traer el anterior.
+      selfTestImpl: async () => {
+        mkdirSync(path.join(base, 'runtime'), { recursive: true })
+        writeFileSync(path.join(base, 'runtime', 'estorbo'), 'x')
+        return false
+      },
+    })
+    expect(r.ok).toBe(false)
+    expect(read(root, 'app/VERSION')).toBe('0.9.0\n')
+    expect(read(root, '.update-rescue/runtime/win-x64/node.exe')).toBe('node viejo')
+    expect(existsSync(path.join(root, 'runtime'))).toBe(true)
+  }, 60_000)
+
+  it('lo que falte en la raíz vuelve desde .update/old', async () => {
+    const root = path.join(tmp, 'apply-falta')
+    const old = path.join(root, '.update', 'old')
+    mkdirSync(path.join(old, 'runtime', 'win-x64'), { recursive: true })
+    writeFileSync(path.join(old, 'runtime', 'win-x64', 'node.exe'), 'node viejo')
+    mkdirSync(path.join(root, 'app'), { recursive: true })
+    await apply.rescueOld(root, old)
+    expect(read(root, 'runtime/win-x64/node.exe')).toBe('node viejo')
+    expect(existsSync(path.join(root, '.update-rescue'))).toBe(false)
   })
 
   it('preparación manipulada (base fuera de .update): no toca nada', async () => {

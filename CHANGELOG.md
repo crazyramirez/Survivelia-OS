@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.3 — 2026-11-23 · La actualización nunca borra la versión anterior
+
+### Corregido
+- **Tras una actualización fallida, la portable podía no volver a abrirse** («No se encuentra runtime\win-x64\node.exe»).
+  Si la versión nueva no pasaba la autoprueba y la vuelta atrás no conseguía devolver alguna carpeta a su sitio, la
+  limpieza final la borraba junto con la carpeta temporal de la actualización.
+  - Lo que falte vuelve a su sitio desde la versión anterior, y lo que no pueda volver se guarda en `.update-rescue`:
+    nunca se borra.
+  - Si la autoprueba se agota, se cierran también los servicios que había abierto (en Windows seguían en marcha
+    dentro de la carpeta que había que mover).
+
+### Notas
+- Una portable que ya se quedó sin `runtime\`: descargar el zip de su sistema y copiar `app`, `runtime`,
+  `Survivelia OS.exe` y `LEEME.txt` encima, sin tocar `data`.
+
 ## 0.14.2 — 2026-11-23 · La actualización de la portable fallaba en Windows
 
 ### Corregido

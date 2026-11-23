@@ -143,6 +143,8 @@ export function selfTest(root, data, { timeoutMs = 180_000, nodeBin = null } = {
     const timer = setTimeout(() => {
       if (done) return
       done = true
+      // Con sus servicios: si no, siguen en marcha desde la carpeta que la vuelta atrás tiene que mover.
+      if (process.platform === 'win32' && child.pid) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 })
       child.kill()
       resolve(false)
     }, timeoutMs)
@@ -190,15 +192,59 @@ export async function applyUpdate(root, pid, { relaunchAfter = true, data = null
   } finally {
     rmSync(lock, { force: true })
   }
-  record(dataDir, result)
-  if (relaunchAfter) relaunch(root)
-  // Limpieza: .update/ entero (staging vacío, ready.json). Si falló, lo nuevo queda en .update-failed para diagnóstico.
+  // Nada de la versión anterior que siga en .update/old se borra: lo que falte en la raíz vuelve a su sitio y el
+  // resto se guarda en .update-rescue. Antes, si la vuelta atrás no podía devolver una carpeta (p. ej. runtime\), la
+  // limpieza de .update/ la borraba y Survivelia OS ya no arrancaba («No se encuentra runtime\win-x64\node.exe»).
+  let keepUpd = false
+  try {
+    await rescueOld(root, join(upd, 'old'), log)
+  } catch {
+    keepUpd = true
+  }
+  // Si falló, lo nuevo queda en .update-failed para diagnóstico.
   if (!result.ok && existsSync(join(upd, 'staging'))) {
     rmSync(join(root, '.update-failed'), { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
     await move(join(upd, 'staging'), join(root, '.update-failed'), 5).catch(() => undefined)
   }
-  rmSync(upd, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+  record(dataDir, result)
+  if (!keepUpd) rmSync(upd, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+  if (relaunchAfter) relaunch(root)
   return result
+}
+
+/** Devuelve a la raíz lo que falte de .update/old y guarda el resto en .update-rescue (nunca lo borra). */
+export async function rescueOld(root, old, log = () => undefined) {
+  let left = []
+  try {
+    left = readdirSync(old)
+  } catch {
+    return
+  }
+  for (const name of left) {
+    if (existsSync(join(root, name))) continue
+    try {
+      await move(join(old, name), join(root, name), 20)
+      log(`recuperado ${name} de la versión anterior`)
+    } catch (err) {
+      log(`ERROR: no se pudo recuperar ${name}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  let rest = []
+  try {
+    rest = readdirSync(old)
+  } catch {
+    return
+  }
+  if (!rest.length) return
+  const keep = join(root, '.update-rescue')
+  rmSync(keep, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
+  try {
+    await move(old, keep, 20)
+    log(`la versión anterior que no volvió a su sitio queda en .update-rescue (${rest.join(', ')})`)
+  } catch (err) {
+    log(`ERROR: no se pudo guardar .update/old: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error('versión anterior sin guardar: no se limpia .update')
+  }
 }
 
 async function applyLocked(root, upd, dataDir, { selfTestImpl, leftoversImpl, log }) {
