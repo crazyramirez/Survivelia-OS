@@ -6,6 +6,8 @@ import type { ContentCatalogItem } from '@survival-os/shared-types'
 import { FREE_MARGIN, autoFit, downloadPlan, orderForInstall, orderPlan, type ContentLang } from '../app/utils/content'
 // @ts-expect-error módulo .mjs sin tipos
 import { libraryBooks, platformKey, profilePaths, syncLibrary } from '../../../scripts/content-engine.mjs'
+// @ts-expect-error módulo .mjs sin tipos
+import { PREFERRED_PORTS, componentsDir, optionalServices, serviceEnv } from '../../../portable/lib.mjs'
 
 const GB = 1024 ** 3
 const catalog = JSON.parse(readFileSync(new URL('../../../content/catalog.json', import.meta.url), 'utf8'))
@@ -258,5 +260,28 @@ describe('registro de los ZIM en library.xml', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('componentes descargados: dentro de data/ (viajan con los datos; las actualizaciones no los tocan)', () => {
+  it('Windows, Linux y macOS: data/components/<sistema>; Android: runtime/<sistema> (vienen en el APK)', () => {
+    expect(componentsDir({ root: '/r', data: '/d', key: 'win-x64', platform: 'win32' })).toBe(join('/d', 'components', 'win-x64'))
+    expect(componentsDir({ root: '/r', data: '/d', key: 'linux-x64', platform: 'linux' })).toBe(join('/d', 'components', 'linux-x64'))
+    expect(componentsDir({ root: '/r', data: '/d', key: 'darwin-arm64', platform: 'darwin' })).toBe(join('/d', 'components', 'darwin-arm64'))
+    expect(componentsDir({ root: '/r', data: '/d', key: 'android-arm64', platform: 'android' })).toBe(join('/r', 'runtime', 'android-arm64'))
+  })
+  it('Wikipedia (kiwix-serve) se arranca desde data/components y pdftotext se busca ahí', () => {
+    const data = '/d'
+    const comp = join(data, 'components', 'linux-x64')
+    const files = new Set([join(comp, 'kiwix-tools', 'kiwix-serve'), join(data, 'library', 'zim', 'library.xml')])
+    const fs = { exists: (p: string) => files.has(p), read: () => '', hasRd5: () => false }
+    const s = optionalServices({ root: '/r', data, key: 'linux-x64', ports: PREFERRED_PORTS, platform: 'linux', threads: 2 }, fs)
+    expect(s.kiwix.cmd).toBe(join(comp, 'kiwix-tools', 'kiwix-serve'))
+    const env = serviceEnv({ root: '/r', data, ports: PREFERRED_PORTS, platform: 'linux', arch: 'x64' })
+    expect(env.library.PDFTOTEXT).toBe(join(comp, 'xpdf', 'pdftotext'))
+  })
+  it('el motor de descargas guarda los componentes de la portable en data/components', () => {
+    const p = profilePaths('portable', '/r')
+    if (process.platform !== 'android') expect(p.componentsDir).toBe(join(p.data, 'components', platformKey() ?? 'unknown'))
   })
 })

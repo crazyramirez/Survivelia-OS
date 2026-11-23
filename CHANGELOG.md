@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.14.5 — 2026-11-23 · Una sola Survivelia OS, y tu carpeta data va donde vayas
+
+### Corregido
+- **Abrir Survivelia OS abría dos ventanas y una copia más de la app cada vez** (Windows, Linux y macOS, desde la
+  0.10). Si ya estaba abierta, se abría su ventana… y a continuación arrancaba otra Survivelia OS completa sobre los
+  mismos datos: varias copias a la vez, cada una con sus servicios y sus descargas pisándose.
+  - Ahora solo hay una: si ya está abierta (o abriéndose), se abre su ventana y nada más.
+- **La biblioteca vacía o el lector sin nada tras actualizar, o al pasar la carpeta `data` a una instalación nueva.**
+  Los programas que se descargan con los contenidos (el servidor de libros Kiwix, el asistente, Java y BRouter,
+  pdftotext, pmtiles) vivían en `runtime/`, que cambia con cada versión.
+
+### Cambiado
+- **Esos programas viven ahora dentro de `data/`**, en `data/components/<sistema>/`. Una instalación nueva con tu
+  carpeta `data` de siempre funciona igual, y ninguna actualización los toca. Al abrir la 0.14.5 se trasladan solos.
+- **La carpeta `data` se puede llevar entre sistemas** (p. ej. 40 GB descargados en Windows a un Mac o a un Linux):
+  - al abrirla en otro sistema se descargan los programas de ese sistema (necesita Internet esa primera vez);
+  - la biblioteca se repara sola aunque venga con rutas de Windows;
+  - se recupera el permiso de ejecución que se pierde al copiar desde una memoria FAT/exFAT.
+- Android no cambia: allí esos programas vienen dentro del APK.
+
 ## 0.14.4 — 2026-11-23 · Los libros dejaban de abrirse tras actualizar la portable
 
 ### Corregido

@@ -11,12 +11,12 @@
  *   node app/portable/launcher.mjs [--no-browser] [--install]
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { availableParallelism, homedir, networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DATA_DIRS, PREFERRED_PORTS, androidComponentLinks, browserArgs, browserCandidates, lanAddress, llmFailure, openCommand, optionalServices, platformKey, serviceEnv, shouldRotate } from './lib.mjs'
+import { DATA_DIRS, PREFERRED_PORTS, androidComponentLinks, componentsDir, browserArgs, browserCandidates, lanAddress, llmFailure, openCommand, optionalServices, platformKey, serviceEnv, shouldRotate } from './lib.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const APP = join(ROOT, 'app')
@@ -33,6 +33,13 @@ const ANDROID = platform === 'android'
  */
 const SELF_TEST = process.argv.includes('--self-test')
 const NO_BROWSER = process.argv.includes('--no-browser') || ANDROID || SELF_TEST
+/**
+ * Ventana de la app abierta por este lanzador (se cierra al aplicar una actualización: la nueva abre otra).
+ * Declarada ANTES de la comprobación de «ya está en marcha», que ya abre una ventana: declarada más abajo, la
+ * asignación fallaba (zona muerta temporal), el error se tomaba por un run.json dañado y arrancaba OTRA copia
+ * completa de Survivelia OS (dos ventanas, y una copia más en marcha cada vez que se abría).
+ */
+let appWindow = null
 
 /** Puente nativo de la app Android (127.0.0.1 con token: lo añade android-guard.mjs). */
 async function bridge(path, body) {
@@ -130,31 +137,100 @@ if (!SELF_TEST && existsSync(APPLYING)) {
   }
 }
 
-if (existsSync(RUN_FILE)) {
+/** Survivelia OS en marcha sobre ESTOS datos (run.json con su proceso vivo y respondiendo). → { pid, url } | null */
+async function runningInstance() {
+  let prev = null
   try {
-    const prev = JSON.parse(readFileSync(RUN_FILE, 'utf8'))
-    if (prev.pid && alive(prev.pid) && (await healthy(prev.url))) {
-      // En la autoprueba no puede haber otra instancia: si la hay, no se puede probar la nueva versión.
-      if (SELF_TEST) fatal('otra instancia en marcha durante la autoprueba')
-      // Actualización preparada y la instancia anterior nunca se cerró (Linux/macOS con Firefox o Chromium en snap
-      // como navegador: cerrar la ventana no cierra Survivelia OS). Volver a abrirla es el momento de aplicarla:
-      // la instancia en marcha la aplica y se reabre con la versión nueva (SIGUSR2 → applyUpdate). En Windows
-      // no hace falta: la ventana de Chrome/Edge sí cierra la app, y allí no hay SIGUSR2.
-      if (platform !== 'win32' && existsSync(join(ROOT, '.update', 'ready.json'))) {
-        try {
-          process.kill(prev.pid, 'SIGUSR2')
-          say('Hay una actualización preparada: se aplica ahora y Survivelia OS se reabrirá en unos segundos…')
-          process.exit(0)
-        } catch {
-          // no se pudo avisar: se abre otra ventana como siempre
-        }
-      }
-      say(`Ya está en marcha (${prev.url}); abriendo otra ventana.`)
-      if (!NO_BROWSER) openBrowser(prev.url, { attach: false })
-      process.exit(0)
-    }
+    prev = JSON.parse(readFileSync(RUN_FILE, 'utf8'))
   } catch {
-    // run.json dañado: se ignora
+    return null // no hay, o run.json dañado
+  }
+  return prev?.pid && prev.url && prev.pid !== process.pid && alive(prev.pid) && (await healthy(prev.url)) ? prev : null
+}
+
+/** Abre una ventana de la copia en marcha y termina: nunca dos copias sobre los mismos datos. */
+function useRunning(prev) {
+  // En la autoprueba no puede haber otra instancia: si la hay, no se puede probar la nueva versión.
+  if (SELF_TEST) fatal('otra instancia en marcha durante la autoprueba')
+  // Actualización preparada y la instancia anterior nunca se cerró (Linux/macOS con Firefox o Chromium en snap
+  // como navegador: cerrar la ventana no cierra Survivelia OS). Volver a abrirla es el momento de aplicarla:
+  // la instancia en marcha la aplica y se reabre con la versión nueva (SIGUSR2 → applyUpdate). En Windows
+  // no hace falta: la ventana de Chrome/Edge sí cierra la app, y allí no hay SIGUSR2.
+  if (platform !== 'win32' && existsSync(join(ROOT, '.update', 'ready.json'))) {
+    try {
+      process.kill(prev.pid, 'SIGUSR2')
+      say('Hay una actualización preparada: se aplica ahora y Survivelia OS se reabrirá en unos segundos…')
+      process.exit(0)
+    } catch {
+      // no se pudo avisar: se abre otra ventana como siempre
+    }
+  }
+  say(`Ya está en marcha (${prev.url}); abriendo otra ventana.`)
+  try {
+    if (!NO_BROWSER) openBrowser(prev.url, { attach: false })
+  } catch (err) {
+    say(`No se pudo abrir la ventana: ${err instanceof Error ? err.message : err}`)
+  }
+  // Pase lo que pase con la ventana, nunca una segunda copia sobre los mismos datos.
+  process.exit(0)
+}
+
+/**
+ * Una sola copia de Survivelia OS por carpeta de datos. run.json solo existe cuando la copia ya está lista: dos
+ * aperturas seguidas (o una mientras la primera arranca) se colaban las dos. El candado data/launcher.lock se crea
+ * en exclusiva al arrancar; si lo tiene otro lanzador vivo, se espera a que esté listo y se usa ese.
+ */
+const LOCK_FILE = join(DATA, 'launcher.lock')
+let lockOwned = false
+function releaseLock() {
+  if (!lockOwned) return
+  lockOwned = false
+  try {
+    if (JSON.parse(readFileSync(LOCK_FILE, 'utf8')).pid === process.pid) rmSync(LOCK_FILE, { force: true })
+  } catch {
+    // ya no está
+  }
+}
+process.on('exit', releaseLock)
+
+if (SELF_TEST) {
+  if (await runningInstance()) fatal('otra instancia en marcha durante la autoprueba')
+} else {
+  const prev = await runningInstance()
+  if (prev) useRunning(prev)
+  mkdirSync(DATA, { recursive: true })
+  // Android: la app ya garantiza un solo proceso de Node, y allí los números de proceso se reutilizan mucho.
+  for (let attempt = 0; attempt < 3 && !lockOwned && !ANDROID; attempt++) {
+    try {
+      writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }), { flag: 'wx' })
+      lockOwned = true
+      break
+    } catch (err) {
+      if (err?.code !== 'EEXIST') break // datos de solo lectura: sin candado, como antes
+    }
+    let owner = 0
+    let since = 0
+    try {
+      const l = JSON.parse(readFileSync(LOCK_FILE, 'utf8'))
+      owner = l.pid
+      since = Date.parse(l.at) || 0
+    } catch {
+      // a medio escribir: se vuelve a mirar
+    }
+    // Un candado de hace más de 150 s sin copia lista (run.json) es de un cierre brusco cuyo número de proceso ha
+    // reutilizado otro programa: no se espera por él.
+    const fresh = Date.now() - since < 150_000
+    if (owner && owner !== process.pid && fresh && alive(owner)) {
+      say('Survivelia OS ya se está abriendo; esperando a que esté lista…')
+      // Hasta 2 minutos (un equipo lento con muchos libros). Si no llega a estar lista, el candado se da por perdido
+      // (p. ej. el número de proceso lo ha reutilizado otro programa).
+      for (let i = 0; i < 240 && alive(owner); i++) {
+        const p = await runningInstance()
+        if (p) useRunning(p)
+        await new Promise((r) => setTimeout(r, 500))
+      }
+    }
+    rmSync(LOCK_FILE, { force: true })
   }
 }
 
@@ -319,6 +395,7 @@ function stop(code = 0) {
   } catch {
     // nada
   }
+  releaseLock()
   setTimeout(() => process.exit(code), 3000).unref()
   Promise.all([...children.values()].map((c) => (c.exitCode === null ? new Promise((r) => c.once('exit', r)) : null))).then(() => process.exit(code))
 }
@@ -518,8 +595,6 @@ function findBrowser() {
  * al cerrarla, el proceso termina y con él Survivelia OS. Si el navegador se desvincula enseguida
  * (p. ej. Chromium en snap), o solo hay navegador por defecto, la app sigue hasta pulsar «Cerrar».
  */
-/** Ventana de la app abierta por este lanzador (se cierra al aplicar una actualización: la nueva abre otra). */
-let appWindow = null
 
 /**
  * Abre `url` con el programa del sistema (xdg-open, open, start). Si no existe (un Linux mínimo sin xdg-open),
@@ -706,7 +781,7 @@ async function repairLibrary() {
   try {
     const { syncLibrary } = await import('../scripts/content-engine.mjs')
     const zimDir = join(DATA, 'library', 'zim')
-    const r = syncLibrary({ zimDir, libraryXml: join(zimDir, 'library.xml'), componentsDir: join(ROOT, 'runtime', key), kiwixManage: null, owner: null })
+    const r = syncLibrary({ zimDir, libraryXml: join(zimDir, 'library.xml'), componentsDir: COMPONENTS, kiwixManage: null, owner: null })
     if (r.added.length) say(`Biblioteca: registrados ${r.added.length} libro(s) que faltaban`)
     if (r.removed.length) say(`Biblioteca: quitados ${r.removed.length} registro(s) sin fichero`)
     if (r.failed.length) say(`Biblioteca: no se pudieron registrar (¿dañados?): ${r.failed.join(', ')}`)
@@ -716,29 +791,111 @@ async function repairLibrary() {
 }
 
 // En la autoprueba solo cuenta el núcleo: ni Wikipedia ni el asistente (cargar un modelo tarda y no se usa).
+/** Componentes descargados de este sistema (data/components/<clave>; Android: runtime/<clave>). */
+const COMPONENTS = key ? componentsDir({ root: ROOT, data: DATA, key, platform }) : null
+
+/**
+ * Hasta la 0.14.4 los componentes descargados vivían en runtime/<clave>/, que cada actualización cambia. Se pasan a
+ * data/components/<clave>/ (una carpeta con marca .version es un componente; Node y lib/ vienen con la app).
+ */
+function migrateComponents() {
+  const old = join(ROOT, 'runtime', key)
+  let names = []
+  try {
+    names = readdirSync(old).filter((n) => existsSync(join(old, n, '.version')))
+  } catch {
+    return
+  }
+  for (const n of names) {
+    const to = join(COMPONENTS, n)
+    try {
+      if (existsSync(join(to, '.version'))) {
+        rmSync(join(old, n), { recursive: true, force: true })
+        continue
+      }
+      mkdirSync(COMPONENTS, { recursive: true })
+      rmSync(to, { recursive: true, force: true })
+      try {
+        renameSync(join(old, n), to)
+      } catch {
+        // otra unidad o un fichero retenido: se copia
+        cpSync(join(old, n), to, { recursive: true })
+        rmSync(join(old, n), { recursive: true, force: true })
+      }
+      say(`Componente ${n}: trasladado a data/components (ya no depende de las actualizaciones)`)
+    } catch (err) {
+      say(`Componente ${n}: no se pudo trasladar (${err instanceof Error ? err.message : err})`)
+    }
+  }
+}
+
 /**
  * Componentes descargados (kiwix-tools, llama, jre, brouter…) que constan como instalados pero faltan en runtime/:
  * las actualizaciones hasta la 0.14.3 los dejaban en .previous al cambiar runtime/, y la biblioteca, el asistente o
  * las rutas dejaban de funcionar aunque sus datos siguieran en data/. Se recuperan de .previous o, si no están, se
  * vuelven a descargar en segundo plano (syncOptional los arranca en cuanto llegan).
  */
+/**
+ * Linux y macOS: una data/ copiada desde Windows o desde una memoria FAT/exFAT pierde el permiso de ejecución de los
+ * componentes. Se restaura en los binarios que declara el catálogo (kiwix-serve, llama-server, java…).
+ */
+function ensureExecutable() {
+  if (platform === 'win32' || !COMPONENTS) return
+  let comps = {}
+  try {
+    comps = JSON.parse(readFileSync(join(APP, 'content', 'catalog.json'), 'utf8')).components ?? {}
+  } catch {
+    return
+  }
+  for (const [c, def] of Object.entries(comps)) {
+    for (const b of def?.bins ?? []) {
+      const f = join(COMPONENTS, c, ...String(b).split('/'))
+      try {
+        if ((statSync(f).mode & 0o111) !== 0o111) chmodSync(f, 0o755)
+      } catch {
+        // no está o no se puede cambiar (memoria montada sin permisos): se verá al arrancarlo
+      }
+    }
+  }
+}
+
 function restoreComponents() {
   if (!key || ANDROID) return
+  migrateComponents()
+  ensureExecutable()
   let state = {}
   try {
     state = JSON.parse(readFileSync(join(DATA, 'content-state.json'), 'utf8'))
   } catch {
-    return
+    // sin estado (data/ nueva o copiada a medias): deciden los datos
   }
-  const missing = Object.entries(state.components ?? {})
-    .filter(([c, v]) => v?.platform === key && /^[a-z0-9-]+$/.test(c) && !existsSync(join(ROOT, 'runtime', key, c, '.version')))
-    .map(([c]) => c)
+  // Lo que dice el estado y lo que piden los datos: con data/ copiada de otra instalación (o de otro sistema) el
+  // estado puede no decirlo, pero los libros necesitan kiwix-tools igualmente.
+  const wanted = new Set(Object.entries(state.components ?? {}).filter(([, v]) => v?.platform === key).map(([c]) => c))
+  const has = (dir, ext) => {
+    try {
+      return readdirSync(dir).some((f) => f.endsWith(ext))
+    } catch {
+      return false
+    }
+  }
+  if (has(join(DATA, 'library', 'zim'), '.zim')) wanted.add('kiwix-tools')
+  try {
+    if (readFileSync(join(DATA, 'llm', 'active'), 'utf8').trim()) wanted.add('llama')
+  } catch {
+    // sin asistente activo
+  }
+  if (has(join(DATA, 'routing', 'segments4'), '.rd5')) {
+    wanted.add('jre')
+    wanted.add('brouter')
+  }
+  const missing = [...wanted].filter((c) => /^[a-z0-9-]+$/.test(c) && !existsSync(join(COMPONENTS, c, '.version')))
   const download = []
   for (const c of missing) {
     const prev = join(ROOT, '.previous', 'runtime', key, c)
     if (existsSync(join(prev, '.version'))) {
       try {
-        cpSync(prev, join(ROOT, 'runtime', key, c), { recursive: true })
+        cpSync(prev, join(COMPONENTS, c), { recursive: true })
         say(`Componente ${c}: recuperado de la versión anterior`)
         continue
       } catch (err) {

@@ -19,7 +19,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { statfs } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { countryLand, countryMaxZoom, countryName, countryZones, estimateMapBytes, ROUTING_TILE_BYTES, routingTiles } from './country-maps.mjs'
 import { extractZip } from './zip.mjs'
@@ -68,8 +68,9 @@ export function profilePaths(profile, root) {
     llmDir: join(data, 'llm'),
     mapsDir: join(data, 'maps'),
     routingDir: join(data, 'routing'),
-    // Componentes descargados para ESTE sistema: <raíz>/runtime/<so-arq>/<componente>/
-    componentsDir: join(root, 'runtime', key ?? 'unknown'),
+    // Componentes descargados para ESTE sistema: <datos>/components/<so-arq>/<componente>/ (viajan con data/ y las
+    // actualizaciones no los tocan; ver componentsDir en portable/lib.mjs). Android: enlazados desde el APK en runtime/.
+    componentsDir: process.platform === 'android' ? join(root, 'runtime', key ?? 'unknown') : join(data, 'components', key ?? 'unknown'),
     kiwixManage: null,
     scripts: null,
     state: join(data, 'content-state.json'),
@@ -407,7 +408,9 @@ export function syncLibrary(paths) {
   const books = libraryBooks(paths.libraryXml)
   // Registros sin fichero: los de esta carpeta, y los que apuntan mal (ruta relativa mal calculada) a un ZIM que
   // sí está en la carpeta; ese se vuelve a registrar abajo con la ruta buena.
-  const stale = (b) => !existsSync(b.path) && (inDir(b.path) || existsSync(join(paths.zimDir, basename(b.path))))
+  // Nombre del fichero con «/» o «\» (una data/ que viene de Windows lleva rutas con «\» también en Linux y macOS).
+  const fileName = (p) => p.split(/[\\/]/).pop() ?? ''
+  const stale = (b) => !existsSync(b.path) && (inDir(b.path) || existsSync(join(paths.zimDir, fileName(b.path))))
   for (const b of books) {
     if (!stale(b)) continue
     try {

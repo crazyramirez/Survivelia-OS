@@ -90,7 +90,17 @@ export function defaultInstallDir(platform, env = {}, home = '', exists = () => 
 }
 
 /** Ficheros de data/ que NO se copian al instalar (propios de cada ejecución o de cada equipo). */
-export const DATA_EXCLUDE = new Set(['logs', 'browser', 'run.json', 'ports.json', 'admin', '.cache'])
+export const DATA_EXCLUDE = new Set(['logs', 'browser', 'run.json', 'ports.json', 'admin', '.cache', 'launcher.lock'])
+
+/**
+ * Carpeta de los componentes descargados (kiwix-tools, llama, jre, brouter, xpdf, pmtiles) de un sistema: dentro
+ * de data/, en data/components/<sistema>/, para que viajen con data/ (instalación nueva + la data/ de siempre = todo
+ * funciona) y ninguna actualización los toque. Hasta la 0.14.4 vivían en runtime/, que cada actualización cambia.
+ * Android: vienen dentro del APK y se enlazan en runtime/ (la carpeta de datos compartida no puede ejecutar nada).
+ */
+export function componentsDir({ root, data, key, platform }) {
+  return platform === 'android' ? join(root, 'runtime', key) : join(data, 'components', key)
+}
 
 /**
  * Variables de entorno de cada servicio. Todo vive en <data>; los sockets y FIFO del kiosco
@@ -129,7 +139,7 @@ export function serviceEnv({ root, data, ports, platform, arch, privateDir = nul
       LIBRARY_DATA_DIR: join(data, 'library'),
       LIBRARY_PROTOCOLS_DIR: join(app, 'content', 'protocols'),
       // pdftotext (Xpdf) descargado con los manuales para este sistema (componente opcional).
-      PDFTOTEXT: join(root, 'runtime', platformKey(platform, arch ?? process.arch) ?? 'unknown', 'xpdf', platform === 'win32' ? 'pdftotext.exe' : 'pdftotext'),
+      PDFTOTEXT: join(componentsDir({ root, data, key: platformKey(platform, arch ?? process.arch) ?? 'unknown', platform }), 'xpdf', platform === 'win32' ? 'pdftotext.exe' : 'pdftotext'),
       KIWIX_URL: `${url(ports.kiwix)}/kiwix`,
       LLM_URL: url(ports.llm),
     },
@@ -194,11 +204,11 @@ export function serviceEnv({ root, data, ports, platform, arch, privateDir = nul
 
 /**
  * Servicios opcionales (ADR 0015): se arrancan solos en cuanto existen su componente (descargado
- * para este sistema en runtime/<so-arq>/) y sus datos. `sig` cambia si hay que reiniciarlos.
+ * para este sistema en data/components/<so-arq>/, ver componentsDir) y sus datos. `sig` cambia si hay que reiniciarlos.
  * fs: { exists(p), read(p) } inyectado para poder probarlo.
  */
 export function optionalServices({ root, data, key, ports, platform, threads }, fs) {
-  const rt = join(root, 'runtime', key)
+  const rt = componentsDir({ root, data, key, platform })
   const exe = (p) => (platform === 'win32' ? `${p}.exe` : p)
   const out = {}
   const lib = join(data, 'library', 'zim', 'library.xml')
