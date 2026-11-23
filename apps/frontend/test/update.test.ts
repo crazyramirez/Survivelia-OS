@@ -40,6 +40,7 @@ type Engine = {
 }
 type Apply = {
   applyUpdate: (root: string, pid: number, o: Record<string, unknown>) => Promise<{ ok: boolean; version: string | null; message: string | null }>
+  leftoverProcesses: (root: string, o: Record<string, unknown>) => { pid: number; exe: string }[]
 }
 
 const scripts = (f: string): string => fileURLToPath(new URL(`../../../scripts/${f}`, import.meta.url))
@@ -339,7 +340,7 @@ describe('apply-update: autoprueba y vuelta atrás (portable)', () => {
 
   it('autoprueba correcta: versión nueva, datos intactos, anterior en .previous', async () => {
     const root = prepared('ok')
-    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => true })
+    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => true, leftoversImpl: () => [] })
     expect(r).toMatchObject({ ok: true, version: '1.0.0' })
     expect(read(root, 'app/VERSION')).toBe('1.0.0\n')
     expect(read(root, 'runtime/win-x64/node.exe')).toBe('node nuevo')
@@ -352,7 +353,7 @@ describe('apply-update: autoprueba y vuelta atrás (portable)', () => {
 
   it('la versión nueva no arranca: vuelve sola a la anterior', async () => {
     const root = prepared('falla')
-    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => false })
+    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => false, leftoversImpl: () => [] })
     expect(r.ok).toBe(false)
     expect(r.message).toMatch(/no arrancó/)
     expect(read(root, 'app/VERSION')).toBe('0.9.0\n')
@@ -364,10 +365,39 @@ describe('apply-update: autoprueba y vuelta atrás (portable)', () => {
     expect(JSON.parse(read(root, 'data/update/last-apply.json'))).toMatchObject({ ok: false, version: '1.0.0' })
   })
 
+  it('cierra antes lo que sigue en marcha desde la carpeta (Windows no deja moverla: EPERM)', async () => {
+    const root = prepared('restos')
+    const seen: string[] = []
+    const r = await apply.applyUpdate(root, 0, {
+      relaunchAfter: false,
+      data: path.join(root, 'data'),
+      selfTestImpl: async () => true,
+      leftoversImpl: (dir: string) => (seen.push(dir), []),
+    })
+    expect(r.ok).toBe(true)
+    expect(seen).toEqual([root])
+  })
+
+  it('solo considera restos los programas de ESA carpeta (no otra que empiece igual, ni el propio actualizador)', () => {
+    const stdout = [
+      String.raw`4|C:\Windows\System32\svchost.exe`,
+      String.raw`10|C:\Users\Ana\Survivelia OS\runtime\win-x64\kiwix-tools\kiwix-serve.exe`,
+      String.raw`11|c:\users\ana\survivelia os\runtime\win-x64\node.exe`,
+      String.raw`12|C:\Users\Ana\Survivelia OS2\runtime\win-x64\node.exe`,
+      String.raw`13|C:\Users\Ana\Survivelia OS\runtime\win-x64\node.exe`,
+      '14|',
+      'basura',
+    ].join('\r\n')
+    const run = () => ({ status: 0, stdout })
+    const list = apply.leftoverProcesses(String.raw`C:\Users\Ana\Survivelia OS`, { platform: 'win32', run, self: 13 })
+    expect(list.map((p) => p.pid)).toEqual([10, 11])
+    expect(apply.leftoverProcesses('/home/ana/Survivelia OS', { platform: 'linux', run })).toEqual([])
+  })
+
   it('preparación manipulada (base fuera de .update): no toca nada', async () => {
     const root = prepared('base')
     writeFileSync(path.join(root, '.update', 'ready.json'), JSON.stringify({ version: '1.0.0', from: '0.9.0', base: 'data' }))
-    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => true })
+    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => true, leftoversImpl: () => [] })
     expect(r.ok).toBe(false)
     expect(read(root, 'app/VERSION')).toBe('0.9.0\n')
   })

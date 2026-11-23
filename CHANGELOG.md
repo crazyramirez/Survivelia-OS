@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.14.2 — 2026-11-23 · La actualización de la portable fallaba en Windows
+
+### Corregido
+- **«No se pudo actualizar … EPERM: operation not permitted, rename …runtime» en la portable de Windows.** Windows no
+  deja mover una carpeta que es el directorio de trabajo de un programa en marcha, y Wikipedia (kiwix-serve) y el
+  asistente (llama-server) trabajaban dentro de `runtime\`. Si uno quedaba vivo tras un cierre brusco, un cuelgue o
+  un apagado, todas las actualizaciones fallaban hasta reiniciar el equipo.
+  - Antes de cambiar las carpetas, el actualizador cierra lo que siga en marcha desde la carpeta de Survivelia OS (y
+    lo anota en `data/logs/update.log`).
+  - Wikipedia y el asistente trabajan ahora en `data\`, así que un proceso suelto ya no bloquea `runtime\`.
+  - Al cerrar Survivelia OS se cierran también las tareas en curso (descargas, etc.) con todos sus procesos. Antes,
+    en Windows seguían en marcha sin ventana, y en Linux y macOS quedaban sueltas; al volver a abrir, una segunda
+    descarga podía empezar encima de la primera. «Descargarlo todo» sigue donde se quedó al lanzarla de nuevo.
+
+### Notas
+- Un equipo que se quedó en la 0.14.0 por este error se actualiza sin problemas tras **reiniciar el ordenador**
+  (cierra el proceso suelto) y abrir Survivelia OS. Desde esta versión ya no hace falta.
+
 ## 0.14.1 — 2026-11-22 · Libros descargados que no salían en la biblioteca
 
 ### Corregido

@@ -14,9 +14,9 @@
  *    Si no responde, VUELVE SOLA a la anterior: una app caída en un equipo de emergencia es peor que una vieja.
  * 4. Guarda la anterior en .previous (solo la última) y anota el resultado en data/update/last-apply.json.
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { join, resolve, sep, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -41,6 +41,40 @@ export async function move(from, to, tries = 20) {
       await sleep(500)
     }
   }
+}
+
+/**
+ * Procesos que siguen ejecutando un programa de la carpeta de Survivelia OS (Windows). Windows no deja mover una
+ * carpeta con un .exe en marcha: una tarea que sobrevivió al cierre (p. ej. «Descargarlo todo» con runtime
+ode.exe,
+ * que era nieto del lanzador y Windows no lo cierra con su padre) hacía fallar la actualización con EPERM.
+ * En Linux y macOS mover la carpeta funciona igualmente. → [{ pid, exe }]
+ */
+export function leftoverProcesses(root, { platform = process.platform, run = spawnSync, self = process.pid } = {}) {
+  if (platform !== 'win32') return []
+  const ps = 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)|$($_.ExecutablePath)" }'
+  const r = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', ps], { encoding: 'utf8', windowsHide: true, timeout: 60_000 })
+  if (r.status !== 0 || typeof r.stdout !== 'string') return []
+  // Rutas de Windows: sin distinguir mayúsculas y con «\» final (que C:\Survivelia OS no case con C:\Survivelia OS2).
+  const prefix = win32.resolve(root).toLowerCase().replace(/[\\/]+$/, '') + '\\'
+  const out = []
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const i = line.indexOf('|')
+    const pid = Number(line.slice(0, i))
+    const exe = line.slice(i + 1).trim()
+    if (i > 0 && Number.isInteger(pid) && pid !== self && exe && exe.toLowerCase().startsWith(prefix)) out.push({ pid, exe })
+  }
+  return out
+}
+
+/** Cierra (con sus hijos) los procesos de leftoverProcesses. → los que había */
+export function stopLeftovers(root, log = () => undefined, opts = {}) {
+  const list = leftoverProcesses(root, opts)
+  for (const p of list) {
+    log(`cerrando ${p.exe} (pid ${p.pid}), que seguía en marcha`)
+    ;(opts.run ?? spawnSync)('taskkill', ['/PID', String(p.pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 })
+  }
+  return list
 }
 
 const nodeName = () => (process.platform === 'win32' ? 'node.exe' : 'node')
@@ -140,7 +174,7 @@ function relaunch(root) {
 }
 
 /** Proceso completo (ver cabecera). `selfTestImpl` solo para pruebas. → { ok, version, message } */
-export async function applyUpdate(root, pid, { relaunchAfter = true, data = null, selfTestImpl = selfTest, log = () => undefined } = {}) {
+export async function applyUpdate(root, pid, { relaunchAfter = true, data = null, selfTestImpl = selfTest, leftoversImpl = stopLeftovers, log = () => undefined } = {}) {
   const upd = join(root, '.update')
   const dataDir = data ?? process.env.SURVIVAL_PORTABLE_DATA ?? join(root, 'data')
   for (let i = 0; i < 120 && pid && alive(pid); i++) await sleep(250)
@@ -152,7 +186,7 @@ export async function applyUpdate(root, pid, { relaunchAfter = true, data = null
   writeFileSync(lock, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }))
   let result
   try {
-    result = await applyLocked(root, upd, dataDir, { selfTestImpl, log })
+    result = await applyLocked(root, upd, dataDir, { selfTestImpl, leftoversImpl, log })
   } finally {
     rmSync(lock, { force: true })
   }
@@ -167,7 +201,7 @@ export async function applyUpdate(root, pid, { relaunchAfter = true, data = null
   return result
 }
 
-async function applyLocked(root, upd, dataDir, { selfTestImpl, log }) {
+async function applyLocked(root, upd, dataDir, { selfTestImpl, leftoversImpl, log }) {
   let ready
   try {
     ready = JSON.parse(readFileSync(join(upd, 'ready.json'), 'utf8'))
@@ -179,6 +213,11 @@ async function applyLocked(root, upd, dataDir, { selfTestImpl, log }) {
   if (!base.startsWith(resolve(upd) + sep) || !existsSync(base)) return { ok: false, version: ready.version ?? null, message: 'preparación incompleta' }
   const old = join(upd, 'old')
   log(`aplicando ${ready.from} → ${ready.version}`)
+  try {
+    if (leftoversImpl(root, log).length) await sleep(1500)
+  } catch (err) {
+    log(`no se pudieron revisar los procesos en marcha: ${err instanceof Error ? err.message : String(err)}`)
+  }
   let swapped
   try {
     swapped = await swapIn(root, base, old)

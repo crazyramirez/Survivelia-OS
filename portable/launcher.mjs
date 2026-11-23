@@ -267,13 +267,53 @@ function launch(name, cmd, args, env, { ipc = false, cwd = DATA, onState = null 
   }
 }
 
+/**
+ * Cierra un servicio CON sus descendientes. Las tareas (descargas, actualización…) las lanza el servidor web; al
+ * cerrar solo el servidor, en Windows seguían en marcha (y con runtime\node.exe abierto, la actualización no podía
+ * mover runtime\: EPERM); en Linux y macOS quedaban huérfanas y una segunda apertura lanzaba otra descarga encima.
+ */
+function killTree(c) {
+  if (!c.pid || c.exitCode !== null) return
+  if (process.platform === 'win32') {
+    const r = spawnSync('taskkill', ['/PID', String(c.pid), '/T', '/F'], { windowsHide: true, timeout: 15_000 })
+    if (r.status === 0) return
+  } else {
+    try {
+      const r = spawnSync('ps', ['-A', '-o', 'pid=', '-o', 'ppid='], { encoding: 'utf8', timeout: 5000 })
+      const kids = new Map()
+      for (const line of String(r.stdout ?? '').split('\n')) {
+        const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+        if (pid && ppid) kids.set(ppid, [...(kids.get(ppid) ?? []), pid])
+      }
+      const all = []
+      const walk = (p) => {
+        for (const k of kids.get(p) ?? []) {
+          all.push(k)
+          walk(k)
+        }
+      }
+      walk(c.pid)
+      for (const p of all) {
+        try {
+          process.kill(p, 'SIGTERM')
+        } catch {
+          // ya terminó
+        }
+      }
+    } catch {
+      // sin ps: al menos el propio servicio
+    }
+  }
+  c.kill()
+}
+
 function stop(code = 0) {
   if (stopping) return
   stopping = true
   say('Cerrando Survivelia OS…')
   // Actualización automática preparada (ADR 0021): se aplica al cerrar, sin reabrir (la próxima vez ya es la nueva).
   if (!ANDROID && !SELF_TEST && !ejecting && !applyingNow && existsSync(join(ROOT, '.update', 'ready.json'))) spawnApplyHelper(false)
-  for (const c of children.values()) if (c.exitCode === null) c.kill()
+  for (const c of children.values()) killTree(c)
   try {
     rmSync(RUN_FILE, { force: true })
   } catch {
@@ -650,7 +690,11 @@ function syncOptional() {
       ...(spec.env ? env[spec.env] : {}),
     }
     const onState = name === 'llm' ? llmState : null
-    optional.set(name, { sig: spec.sig, handle: launch(name, spec.cmd, spec.args, libEnv, { cwd: spec.cwd, onState }) })
+    // Windows no deja mover una carpeta que es el directorio de trabajo de un proceso: con kiwix-serve o llama-server
+    // trabajando en runtime\… (y uno huérfano tras un cierre brusco vive hasta reiniciar), la actualización fallaba
+    // con EPERM al mover runtime\. Las DLL se buscan igualmente junto al .exe.
+    const cwd = platform === 'win32' ? DATA : spec.cwd
+    optional.set(name, { sig: spec.sig, handle: launch(name, spec.cmd, spec.args, libEnv, { cwd, onState }) })
   }
 }
 /**
