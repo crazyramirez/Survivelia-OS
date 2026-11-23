@@ -108,6 +108,29 @@ async function fetchLibgomp(key) {
   rmSync(tmp, { recursive: true, force: true })
 }
 
+/**
+ * Windows: el runtime de Visual C++ (msvcp140, vcruntime140, vcruntime140_1) que necesitan kiwix-tools y llama.cpp
+ * y que sus paquetes oficiales no traen. Un Windows sin el «Visual C++ Redistributable» no puede arrancarlos (sin
+ * ningún mensaje): los libros se descargaban pero no aparecían. Microsoft permite distribuirlas junto a la
+ * aplicación; son las de Visual Studio 2022 (VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT), con SHA-256
+ * fijado. Van en runtime/win-x64/vcrt y el lanzador las copia junto a esos programas.
+ */
+const VCRT = {
+  'msvcp140.dll': '0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9',
+  'vcruntime140.dll': 'd5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066',
+  'vcruntime140_1.dll': '1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f',
+}
+function stageVcrt(key) {
+  if (!key.startsWith('win')) return
+  const dest = join(stage, 'runtime', key, 'vcrt')
+  mkdirSync(dest, { recursive: true })
+  for (const [name, sum] of Object.entries(VCRT)) {
+    const src = join(root, 'portable', 'win', 'vcrt', name)
+    if (!existsSync(src) || sha256(src) !== sum) fail(`Falta o no coincide portable/win/vcrt/${name}`)
+    cpSync(src, join(dest, name))
+  }
+}
+
 // ------------------------------------------------------------------ Montaje de la carpeta
 
 rmSync(join(outDir, 'portable'), { recursive: true, force: true })
@@ -156,6 +179,7 @@ cpSync(join(root, 'portable', 'data-LEEME.txt'), join(stage, 'data', 'LEEME.txt'
 for (const t of targets) {
   await fetchNode(t)
   await fetchLibgomp(t)
+  stageVcrt(t)
 }
 
 // Permisos locales (si se monta en macOS/Linux) y en el zip.

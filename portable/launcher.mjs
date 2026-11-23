@@ -670,6 +670,17 @@ if (ANDROID) linkAndroidComponents()
 const webUrl = `http://127.0.0.1:${ports.web}`
 
 say(`Iniciando desde ${ROOT}`)
+// Windows: el runtime de Visual C++ de la portable (ver setupVcrt) en el PATH de TODOS los procesos, antes de
+// lanzarlos: el motor de descargas (hijo del servidor web) lo necesita para kiwix-manage y lo copia al instalar.
+if (platform === 'win32') {
+  const k = platformKey(platform, process.arch)
+  const d = k ? join(ROOT, 'runtime', k, 'vcrt') : null
+  if (d && existsSync(d)) {
+    process.env.SURVIVAL_VCRT = d
+    process.env.PATH = `${d};${process.env.PATH ?? ''}`
+  }
+}
+
 launch('device-api', node, [join(APP, 'services', 'device-api', 'dist', 'server.js')], env.device)
 launch('library', node, [join(APP, 'services', 'library', 'dist', 'server.js')], env.library)
 launch('vault', node, [join(APP, 'services', 'vault', 'dist', 'portable-server.js')], env.vault)
@@ -859,10 +870,41 @@ function ensureExecutable() {
   }
 }
 
+/**
+ * Windows: runtime de Visual C++ (runtime/win-x64/vcrt) para kiwix-tools y llama.cpp, que lo necesitan y no lo traen.
+ * Sin él, en un Windows sin el «Visual C++ Redistributable» no arrancaban (sin ningún mensaje): los libros se
+ * descargaban pero la biblioteca salía vacía. Se copia junto a sus .exe (la carpeta del programa manda sobre
+ * System32, por si ahí hay una versión antigua) y se añade al PATH de los procesos de Survivelia OS (respaldo, y
+ * para el motor de descargas, que lo copia al instalar un componente: SURVIVAL_VCRT).
+ */
+const VCRT_DIR = platform === 'win32' && key ? join(ROOT, 'runtime', key, 'vcrt') : null
+function setupVcrt() {
+  if (!VCRT_DIR || !existsSync(VCRT_DIR)) return
+  let dlls = []
+  try {
+    dlls = readdirSync(VCRT_DIR).filter((f) => f.toLowerCase().endsWith('.dll'))
+  } catch {
+    return
+  }
+  for (const comp of ['kiwix-tools', 'llama']) {
+    const dir = join(COMPONENTS, comp)
+    if (!existsSync(dir)) continue
+    for (const d of dlls) {
+      try {
+        const to = join(dir, d)
+        if (!existsSync(to) || statSync(to).size !== statSync(join(VCRT_DIR, d)).size) copyFileSync(join(VCRT_DIR, d), to)
+      } catch {
+        // en uso o sin permiso: queda el PATH
+      }
+    }
+  }
+}
+
 function restoreComponents() {
   if (!key || ANDROID) return
   migrateComponents()
   ensureExecutable()
+  setupVcrt()
   let state = {}
   try {
     state = JSON.parse(readFileSync(join(DATA, 'content-state.json'), 'utf8'))

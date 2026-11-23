@@ -329,6 +329,7 @@ export async function ensureComponent(catalog, paths, comp) {
     for (const b of c.bins) if (existsSync(join(dir, b))) spawnSync('chmod', ['755', join(dir, b)])
     if (process.platform === 'darwin') spawnSync('xattr', ['-dr', 'com.apple.quarantine', dir], { stdio: 'ignore' })
   }
+  copyVcrt(dir)
   writeFileSync(marker, `${c.version}\n`)
   writeState(paths, (st) => {
     st.components[comp] = { version: c.version, platform: key, at: new Date().toISOString() }
@@ -356,6 +357,41 @@ export async function resolveZim(catalog, name, flavour) {
   return best
 }
 
+/**
+ * Windows: copia el runtime de Visual C++ de la portable (SURVIVAL_VCRT, lo pone el lanzador) junto a los .exe de un
+ * componente. kiwix-tools y llama.cpp lo necesitan y no lo traen: sin el «Visual C++ Redistributable» instalado no
+ * arrancaban, sin ningún mensaje.
+ */
+export function copyVcrt(dir, vcrt = process.env.SURVIVAL_VCRT, platform = process.platform) {
+  if (platform !== 'win32' || !vcrt || !existsSync(vcrt)) return
+  let hasExe = false
+  try {
+    hasExe = readdirSync(dir).some((f) => f.toLowerCase().endsWith('.exe'))
+  } catch {
+    return
+  }
+  if (!hasExe) return
+  for (const f of readdirSync(vcrt)) if (f.toLowerCase().endsWith('.dll')) cpSync(join(vcrt, f), join(dir, f))
+}
+
+/** Códigos NTSTATUS de Windows cuando un programa no llega a arrancar. */
+const NTSTATUS = {
+  3221225781: 'falta una DLL (Visual C++ Redistributable)',
+  3221225595: 'una DLL no es compatible',
+  3221225477: 'el programa se cerró (violación de acceso)',
+  3221225506: 'el sistema o el antivirus bloqueó el programa',
+}
+
+/** Por qué un programa (spawnSync) falló, también cuando no escribe nada. */
+export function runFailure(r) {
+  if (r.error) return `no se pudo ejecutar (${r.error.code ?? r.error.message})`
+  const out = `${r.stderr ?? ''}${r.stdout ?? ''}`.trim()
+  if (out) return out.slice(0, 400)
+  const code = r.status == null ? null : r.status >>> 0
+  if (code != null && NTSTATUS[code]) return `${NTSTATUS[code]} (código 0x${code.toString(16).toUpperCase()})`
+  return r.signal ? `terminado por la señal ${r.signal}` : `código de salida ${r.status}`
+}
+
 function kiwixManage(paths) {
   return paths.kiwixManage ?? componentBin(paths, 'kiwix-tools', 'kiwix-manage')
 }
@@ -363,8 +399,8 @@ function kiwixManage(paths) {
 function libraryCall(paths, args) {
   const km = kiwixManage(paths)
   if (!km) throw new Error('kiwix-manage no disponible')
-  const r = spawnSync(km, [paths.libraryXml, ...args], { encoding: 'utf8' })
-  if (r.status !== 0) throw new Error(`kiwix-manage ${args[0]}: ${r.stderr || r.stdout}`)
+  const r = spawnSync(km, [paths.libraryXml, ...args], { encoding: 'utf8', windowsHide: true })
+  if (r.status !== 0) throw new Error(`kiwix-manage ${args[0]}: ${runFailure(r)}`)
   return r.stdout
 }
 

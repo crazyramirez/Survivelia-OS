@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ContentCatalogItem } from '@survival-os/shared-types'
 import { FREE_MARGIN, autoFit, downloadPlan, orderForInstall, orderPlan, type ContentLang } from '../app/utils/content'
 // @ts-expect-error módulo .mjs sin tipos
-import { libraryBooks, platformKey, profilePaths, syncLibrary } from '../../../scripts/content-engine.mjs'
+import { copyVcrt, libraryBooks, platformKey, profilePaths, runFailure, syncLibrary } from '../../../scripts/content-engine.mjs'
 // @ts-expect-error módulo .mjs sin tipos
 import { PREFERRED_PORTS, componentsDir, optionalServices, serviceEnv } from '../../../portable/lib.mjs'
 
@@ -283,5 +283,42 @@ describe('componentes descargados: dentro de data/ (viajan con los datos; las ac
   it('el motor de descargas guarda los componentes de la portable en data/components', () => {
     const p = profilePaths('portable', '/r')
     if (process.platform !== 'android') expect(p.componentsDir).toBe(join(p.data, 'components', platformKey() ?? 'unknown'))
+  })
+})
+
+describe('programas que no arrancan: el motivo siempre queda escrito', () => {
+  it('Windows sin el runtime de Visual C++: «falta una DLL» en vez de un mensaje vacío', () => {
+    expect(runFailure({ status: 3221225781, stdout: '', stderr: '' })).toMatch(/falta una DLL.*0xC0000135/)
+    expect(runFailure({ status: -1073741515, stdout: '', stderr: '' })).toMatch(/0xC0000135/)
+    expect(runFailure({ error: Object.assign(new Error('x'), { code: 'ENOENT' }), status: null })).toMatch(/ENOENT/)
+    expect(runFailure({ status: 1, stdout: '', stderr: 'Cannot write the library' })).toBe('Cannot write the library')
+    expect(runFailure({ status: 2, stdout: '', stderr: '' })).toBe('código de salida 2')
+  })
+  it('las DLL de Visual C++ se copian junto a los .exe de un componente (y solo en Windows)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sv-vcrt-'))
+    try {
+      const vcrt = join(dir, 'vcrt')
+      const comp = join(dir, 'kiwix-tools')
+      const jre = join(dir, 'jre')
+      for (const d of [vcrt, comp, jre]) mkdirSync(d, { recursive: true })
+      writeFileSync(join(vcrt, 'msvcp140.dll'), 'dll')
+      writeFileSync(join(comp, 'kiwix-serve.exe'), 'exe')
+      writeFileSync(join(jre, 'release'), 'x')
+      copyVcrt(comp, vcrt, 'linux')
+      expect(existsSync(join(comp, 'msvcp140.dll'))).toBe(false)
+      copyVcrt(comp, vcrt, 'win32')
+      copyVcrt(jre, vcrt, 'win32')
+      expect(readFileSync(join(comp, 'msvcp140.dll'), 'utf8')).toBe('dll')
+      expect(existsSync(join(jre, 'msvcp140.dll'))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('la portable de Windows lleva el runtime de Visual C++ (con su SHA-256)', () => {
+    const src = readFileSync(new URL('../../../scripts/release-portable.mjs', import.meta.url), 'utf8')
+    for (const f of ['msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll']) {
+      expect(src).toContain(`'${f}'`)
+      expect(existsSync(new URL(`../../../portable/win/vcrt/${f}`, import.meta.url))).toBe(true)
+    }
   })
 })

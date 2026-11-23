@@ -322,6 +322,23 @@ export async function sync() {
     }
     await Promise.all(Array.from({ length: WORKERS }, worker))
 
+    // Segunda vuelta, de uno en uno y tras una pausa: los fallos de red («fetch failed») suelen ser cortes o límites
+    // del servidor al pedir muchos archivos a la vez, y casi siempre salen bien después.
+    if (failed.length) {
+      const again = todo.filter((e) => failed.includes(e.path))
+      log(`Reintentando ${again.length} archivo(s) de uno en uno…`)
+      await sleep(30_000)
+      for (const e of again) {
+        try {
+          index[e.path] = await download(e, placeIn(staging, e.path))
+          failed.splice(failed.indexOf(e.path), 1)
+        } catch (err) {
+          log(`FALLO definitivo ${e.path}: ${err.message}`)
+        }
+      }
+      if (!failed.length) log('Reintento completado: todos los archivos descargados')
+    }
+
     for (const rel of OPTIONAL) {
       if (index[rel]) continue
       try {

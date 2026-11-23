@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.14.6 — 2026-11-23 · Survivelia OS autosuficiente en Windows
+
+### Corregido
+- **En un Windows sin el «Visual C++ Redistributable» (p. ej. recién instalado), la biblioteca salía vacía aunque
+  los libros estuvieran descargados, y el asistente no arrancaba.** El servidor de libros (Kiwix) y el asistente
+  (llama.cpp) necesitan tres DLL de Microsoft (`msvcp140`, `vcruntime140`, `vcruntime140_1`) que sus paquetes no
+  traen: sin ellas no llegaban a arrancar, sin ningún mensaje.
+  - La portable de Windows las incluye (`runtime/win-x64/vcrt`, las oficiales de Visual Studio 2022) y las pone
+    junto a esos programas al abrir y al descargarlos. Comprobado: se cargan desde ahí, no del sistema.
+  - Si un programa no arranca, el registro dice por qué («falta una DLL», con su código) en lugar de quedar vacío.
+- Juegos: los archivos que fallan por la red se reintentan al final, de uno en uno y tras una pausa.
+
+### Notas
+- Revisadas las librerías de todos los componentes en Windows, Linux y macOS. En Linux, el asistente necesita una
+  distribución de 2022 o posterior (Ubuntu 22.04, Debian 12, Fedora 36…); en Linux ARM, la portable aún necesita
+  glibc 2.38 (Debian 13, Ubuntu 24.04): se resolverá en una próxima versión. La Raspberry Pi no se ve afectada.
+
 ## 0.14.5 — 2026-11-23 · Una sola Survivelia OS, y tu carpeta data va donde vayas
 
 ### Corregido
