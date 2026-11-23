@@ -322,3 +322,22 @@ describe('programas que no arrancan: el motivo siempre queda escrito', () => {
     }
   })
 })
+
+describe('asistente en Linux: la variante de llama-server según la CPU', () => {
+  const pick = (key: string, cpuinfo: string, bins: string[]) => {
+    const data = '/d'
+    const comp = join(data, 'components', key)
+    const files = new Set([join(data, 'llm', 'active'), join(data, 'llm', 'models', 'm.gguf'), ...bins.map((b) => join(comp, 'llama', b))])
+    const fs = { exists: (p: string) => files.has(p), read: (p: string) => (p === '/proc/cpuinfo' ? cpuinfo : 'm.gguf'), hasRd5: () => false }
+    return optionalServices({ root: '/r', data, key, ports: PREFERRED_PORTS, platform: 'linux', threads: 2 }, fs).llm.cmd.split(/[\\/]/).pop()
+  }
+  it('ARM: dotprod si la CPU lo tiene (Pi 5); si no, el básico (Pi 4)', () => {
+    expect(pick('linux-arm64', 'Features : fp asimd evtstrm aes crc32 asimddp', ['llama-server', 'llama-server-dotprod'])).toBe('llama-server-dotprod')
+    expect(pick('linux-arm64', 'Features : fp asimd evtstrm crc32 cpuid', ['llama-server', 'llama-server-dotprod'])).toBe('llama-server')
+  })
+  it('x64: AVX2 si la CPU lo tiene; si no, el básico; y el paquete antiguo (sin variantes) sigue valiendo', () => {
+    expect(pick('linux-x64', 'flags : fpu sse4_2 avx avx2 fma', ['llama-server', 'llama-server-avx2'])).toBe('llama-server-avx2')
+    expect(pick('linux-x64', 'flags : fpu sse4_2', ['llama-server', 'llama-server-avx2'])).toBe('llama-server')
+    expect(pick('linux-x64', 'flags : avx2', ['llama-server'])).toBe('llama-server')
+  })
+})

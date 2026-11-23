@@ -260,10 +260,12 @@ export async function collectRtc(pmic: Record<string, number> | null): Promise<P
 
 export async function collectTime(rtc: Probe<RtcInfo>): Promise<Probe<TimeInfo>> {
   if (process.platform === 'win32') {
-    // Windows mantiene la hora con su servicio NTP (w32time): verificada solo si informa sincronización.
+    // Windows: «NTP» si su servicio de hora (w32time) informa sincronización. Si no (en portátiles suele estar parado
+    // hasta que le toca, y entonces w32tm no responde), la hora es la del equipo: todo PC o portátil la mantiene con
+    // su reloj con pila, así que no se avisa de «hora no verificada» (fuente `device`, como en Android).
     const res = await run('w32tm', ['/query', '/status'], 5000)
     const ntp = res.ok ? parseW32tmLeap(res.stdout) : null
-    return ok({ ...timeSourceFrom(ntp, false, null, Date.now()), ntpSynchronized: ntp, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null })
+    return ok({ ...timeSourceFrom(ntp, false, null, Date.now(), true), ntpSynchronized: ntp, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null })
   }
   if (isAndroid()) {
     // Android: hora de red del sistema (13+) y comprobación con el GNSS de la tablet, que la app deja en
@@ -276,16 +278,19 @@ export async function collectTime(rtc: Probe<RtcInfo>): Promise<Probe<TimeInfo>>
     return ok({ ...timeSourceFrom(ntp, false, sync, Date.now(), true), ntpSynchronized: ntp, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null })
   }
   if (process.platform === 'darwin') {
-    // macOS no expone el estado de sincronización sin administrador: no se afirma (fuente «sin verificar»).
-    return ok({ ...timeSourceFrom(null, false, null, Date.now()), ntpSynchronized: null, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null })
+    // macOS no expone el estado de sincronización sin administrador: la hora es la del equipo (reloj con pila).
+    return ok({ ...timeSourceFrom(null, false, null, Date.now(), true), ntpSynchronized: null, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null })
   }
   if (!isLinux()) return notLinux()
   const res = await run('timedatectl', ['show', '-p', 'NTPSynchronized', '-p', 'Timezone'])
   const kv = res.ok ? parseKeyValue(res.stdout) : {}
   const ntp = kv.NTPSynchronized === undefined ? null : kv.NTPSynchronized === 'yes'
   const rtcWithBattery = rtc.state === 'ok' && rtc.value.hasBattery === true
+  // La portable en un PC o portátil con Linux: reloj con pila, como en Windows. La Raspberry Pi no lo trae de serie
+  // (pila opcional): ahí sigue mandando la comprobación (NTP, GNSS, LoRa o la pila medida).
+  const pcClock = process.env.SURVIVAL_PORTABLE === '1' && !/Raspberry Pi/i.test((await readText('/proc/device-tree/model')) ?? '')
   // GNSS/LoRa: survival-timesync deja su última comprobación en /run (ADR 0011).
-  const ts = timeSourceFrom(ntp, rtcWithBattery, await readText('/run/survival-os/timesync.json'), Date.now())
+  const ts = timeSourceFrom(ntp, rtcWithBattery, await readText('/run/survival-os/timesync.json'), Date.now(), pcClock)
   return ok({ ...ts, ntpSynchronized: ntp, timezone: kv.Timezone ?? null })
 }
 

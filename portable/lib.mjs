@@ -218,12 +218,34 @@ export function optionalServices({ root, data, key, ports, platform, threads }, 
   }
   const active = fs.exists(join(data, 'llm', 'active')) ? fs.read(join(data, 'llm', 'active')).trim() : ''
   const model = active ? join(data, 'llm', 'models', active) : ''
-  const llama = join(rt, 'llama', exe('llama-server'))
+  // Linux: el paquete de Survivelia OS (scripts/build-llama-linux.sh, glibc 2.31) trae dos llama-server: el básico
+  // (ARMv8 / x86-64-v2, cualquier equipo) y uno más rápido si la CPU lo permite: «dotprod» (ARMv8.2: Raspberry Pi 5 y
+  // placas actuales) o AVX2 (x86-64-v3: procesadores de 2013 en adelante).
+  let llama = join(rt, 'llama', exe('llama-server'))
+  if (platform === 'linux') {
+    let cpu = ''
+    try {
+      cpu = fs.read('/proc/cpuinfo')
+    } catch {
+      // sin /proc/cpuinfo: el básico
+    }
+    for (const [bin, flag] of [['llama-server-dotprod', /\basimddp\b/], ['llama-server-avx2', /\bavx2\b/]]) {
+      if (fs.exists(join(rt, 'llama', bin)) && flag.test(cpu)) llama = join(rt, 'llama', bin)
+    }
+  }
   if (active && fs.exists(model) && fs.exists(llama)) {
+    // La firma incluye la versión del llama instalado: al cambiarlo (p. ej. por el que compila Survivelia OS), el
+    // asistente se reinicia con el nuevo sin tener que cerrar la app.
+    let llamaVersion = ''
+    try {
+      llamaVersion = fs.exists(join(rt, 'llama', '.version')) ? fs.read(join(rt, 'llama', '.version')).trim() : ''
+    } catch {
+      // sin marca
+    }
     out.llm = {
       cmd: llama,
       args: ['--host', '127.0.0.1', '--port', String(ports.llm), '-m', model, '-c', '4096', '-t', String(threads), '--no-webui', '--parallel', '1'],
-      sig: active,
+      sig: `${active}|${llamaVersion}|${llama}`,
       cwd: join(rt, 'llama'),
     }
   }

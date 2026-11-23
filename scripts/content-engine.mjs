@@ -299,11 +299,14 @@ export async function ensureComponent(catalog, paths, comp) {
   if (!c) throw new Error(`Componente desconocido: ${comp}`)
   const dir = join(paths.componentsDir, comp)
   const marker = join(dir, '.version')
-  if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === c.version) return dir
   const key = platformKey()
   const asset = c.assets[key] ?? c.assets.any
+  // Un paquete de un sistema puede llevar su propia versión (p. ej. el llama-server que compila Survivelia OS para
+  // Linux): cambiarla hace que las instalaciones de ese sistema lo vuelvan a descargar, y las demás no.
+  const version = asset?.version ?? c.version
+  if (existsSync(marker) && readFileSync(marker, 'utf8').trim() === version) return dir
   if (!asset) throw new Error(`${comp} no está disponible para ${key}`)
-  say(`Componente ${comp} ${c.version} para ${key}`)
+  say(`Componente ${comp} ${version} para ${key}`)
   const cache = join(paths.data, '.cache')
   const file = join(cache, decodeURIComponent(asset.url.split('/').pop()))
   // Lo publicado en download.kiwix.org está también en sus espejos oficiales (el maestro limita con 429).
@@ -330,9 +333,9 @@ export async function ensureComponent(catalog, paths, comp) {
     if (process.platform === 'darwin') spawnSync('xattr', ['-dr', 'com.apple.quarantine', dir], { stdio: 'ignore' })
   }
   copyVcrt(dir)
-  writeFileSync(marker, `${c.version}\n`)
+  writeFileSync(marker, `${version}\n`)
   writeState(paths, (st) => {
-    st.components[comp] = { version: c.version, platform: key, at: new Date().toISOString() }
+    st.components[comp] = { version, platform: key, at: new Date().toISOString() }
   })
   return dir
 }

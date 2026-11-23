@@ -4870,7 +4870,9 @@
     "llama": {
       "version": "b12428",
       "bins": [
-        "llama-server"
+        "llama-server",
+        "llama-server-dotprod",
+        "llama-server-avx2"
       ],
       "assets": {
         "win-x64": {
@@ -4892,16 +4894,18 @@
           "strip": "llama-b12428/"
         },
         "linux-x64": {
-          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12428/llama-b12428-bin-ubuntu-x64.tar.gz",
-          "sha256": "a9b243a3bc4ca172010e96c64062fc02afd1dc4f8b699716f813ae6845ada4c6",
-          "bytes": 23457554,
-          "strip": "llama-b12428/"
+          "url": "https://github.com/crazyramirez/Survivelia-OS/releases/download/components/llama-b12428-survivelia-linux-x64.tar.gz",
+          "sha256": "9c4dd7e63fb6dc821fb33e0fa49dc11c1c9e47e6e12662a9dfe00bd6ee7b10a5",
+          "bytes": 17736242,
+          "strip": "llama-b12428-survivelia-linux-x64/",
+          "version": "b12428-svl1"
         },
         "linux-arm64": {
-          "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12428/llama-b12428-bin-ubuntu-arm64.tar.gz",
-          "sha256": "68fdee3e3086de8d1b6b3ef3bb791ff03ec4a6f2a8e7e199130fb70167d33d6d",
-          "bytes": 19090408,
-          "strip": "llama-b12428/"
+          "url": "https://github.com/crazyramirez/Survivelia-OS/releases/download/components/llama-b12428-survivelia-linux-arm64.tar.gz",
+          "sha256": "72a2406cb19865eac7fa9d197eb5d8212b01cfff28b2e150b914ef766afc2ad6",
+          "bytes": 16841225,
+          "strip": "llama-b12428-survivelia-linux-arm64/",
+          "version": "b12428-svl1"
         }
       }
     },

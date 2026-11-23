@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.7 — 2026-11-23 · Asistente en cualquier Linux, y la hora en los PC
+
+### Corregido
+- **El asistente no arrancaba en Linux ARM con Debian 12 o Raspberry Pi OS Bookworm** (versión portable), ni en
+  Linux de antes de 2022: el llama.cpp oficial pide glibc 2.38 (ARM) o 2.34 (x64) y OpenSSL 3.
+  - Survivelia OS compila ahora su propio `llama-server` para Linux con glibc 2.31 (Debian 11+, Ubuntu 20.04+,
+    Raspberry Pi OS Bullseye/Bookworm), sin OpenSSL ni OpenMP: solo depende del sistema base. Receta:
+    `scripts/build-llama-linux.sh`; paquetes en la release «components».
+  - Dos variantes, elegidas solas según la CPU: la básica y otra rápida (ARM «dotprod» —Raspberry Pi 5 y placas
+    actuales— o AVX2 en x64).
+  - Las instalaciones que ya tienen el asistente lo cambian solas al abrir la versión nueva, y el asistente se
+    reinicia sin cerrar la app.
+- **«Hora no verificada» en Windows, macOS y Linux de PC o portátil** sin NTP ni GNSS. Un PC o un portátil mantiene
+  la hora con su reloj con pila: ahora se muestra como hora del equipo, sin aviso. Si Windows confirma la
+  sincronización por Internet, «NTP». La Raspberry Pi no cambia (allí la pila del reloj es opcional).
+
 ## 0.14.6 — 2026-11-23 · Survivelia OS autosuficiente en Windows
 
 ### Corregido

@@ -931,8 +931,33 @@ function restoreComponents() {
     wanted.add('jre')
     wanted.add('brouter')
   }
-  const missing = [...wanted].filter((c) => /^[a-z0-9-]+$/.test(c) && !existsSync(join(COMPONENTS, c, '.version')))
-  const download = []
+  // Versión que pide el catálogo para ESTE sistema (un paquete puede llevar la suya: el llama-server que compila
+  // Survivelia OS para Linux). Una marca distinta (p. ej. el llama oficial, que no arrancaba en Linux ARM con
+  // Debian 12) se cambia por la del catálogo.
+  let catalogComps = {}
+  try {
+    catalogComps = JSON.parse(readFileSync(join(APP, 'content', 'catalog.json'), 'utf8')).components ?? {}
+  } catch {
+    // sin catálogo: solo lo que falte
+  }
+  const wantVersion = (c) => {
+    const def = catalogComps[c]
+    return def ? ((def.assets?.[key] ?? def.assets?.any)?.version ?? def.version ?? null) : null
+  }
+  const installed = (c) => {
+    try {
+      return readFileSync(join(COMPONENTS, c, '.version'), 'utf8').trim()
+    } catch {
+      return null
+    }
+  }
+  const outdated = [...wanted].filter((c) => {
+    const have = installed(c)
+    const want = wantVersion(c)
+    return have !== null && want !== null && have !== want
+  })
+  const missing = [...wanted].filter((c) => /^[a-z0-9-]+$/.test(c) && installed(c) === null)
+  const download = [...outdated]
   for (const c of missing) {
     const prev = join(ROOT, '.previous', 'runtime', key, c)
     if (existsSync(join(prev, '.version'))) {
