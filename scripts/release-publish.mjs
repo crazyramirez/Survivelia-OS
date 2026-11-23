@@ -292,8 +292,15 @@ for (let i = 0; i < 20 && !published?.equals(bytes); i++) {
   published = await fetch(`${LATEST_BASE}/${MANIFEST_NAME}`, { redirect: 'follow' }).then(async (r) => (r.ok ? Buffer.from(await r.arrayBuffer()) : null), () => null)
 }
 if (!published?.equals(bytes)) fail(`releases/latest/download/${MANIFEST_NAME} no coincide con el firmado (¿otra release marcada como «latest»?)`)
-const pubSig = await fetch(`${LATEST_BASE}/${SIG_NAME}`, { redirect: 'follow' }).then((r) => r.text())
-if (!verifyManifest(published, pubSig).ok) fail('la firma publicada no verifica')
+// La firma puede tardar unos segundos más que el manifiesto en verse nueva en releases/latest (caché de GitHub): se
+// reintenta antes de dar el fallo por bueno.
+let sigOk = false
+for (let i = 0; i < 20 && !sigOk; i++) {
+  if (i) await new Promise((r) => setTimeout(r, 6000))
+  const pubSig = await fetch(`${LATEST_BASE}/${SIG_NAME}`, { redirect: 'follow', cache: 'no-store' }).then((r) => (r.ok ? r.text() : ''), () => '')
+  sigOk = !!pubSig && verifyManifest(published, pubSig).ok
+}
+if (!sigOk) fail('la firma publicada no verifica')
 okMsg('manifiesto y firma publicados correctos')
 for (const a of assets) {
   const r = await fetch(`${tagBase(tag)}/${a.name}`, { method: 'HEAD', redirect: 'follow' }).catch(() => null)

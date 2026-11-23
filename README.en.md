@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.11.0-8cbf96?style=flat-square&labelColor=0f1412" alt="Version 0.11.0">
+  <a href="https://github.com/crazyramirez/Survivelia-OS/releases/latest"><img src="https://img.shields.io/github/v/release/crazyramirez/Survivelia-OS?label=version&color=8cbf96&style=flat-square&labelColor=0f1412" alt="Latest version"></a>
   <img src="https://img.shields.io/badge/Raspberry%20Pi%205-touch%20kiosk-8cbf96?style=flat-square&labelColor=0f1412" alt="Raspberry Pi 5">
   <img src="https://img.shields.io/badge/portable-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-8cbf96?style=flat-square&labelColor=0f1412" alt="Portable: Windows, macOS and Linux">
   <img src="https://img.shields.io/badge/languages-ES%20%C2%B7%20EN%20%C2%B7%20FR%20%C2%B7%20IT%20%C2%B7%20DE%20%C2%B7%20ZH%20%C2%B7%20JA-8cbf96?style=flat-square&labelColor=0f1412" alt="Languages: Spanish, English, French, Italian, German, Chinese and Japanese">
@@ -35,8 +35,52 @@ It runs in three ways:
 > Real screenshots from the device (Raspberry Pi 5, 8 GB, 1024×600 screen) with real data. They show the Spanish
 > interface; the map is centred on Madrid and network addresses are blurred.
 
+## Install in two minutes
+
+Nothing to install first: every download includes everything (Node and the Windows libraries too).
+
+| Where | Download (latest version) | How to open it |
+|---|---|---|
+| **Windows 10/11** | [survivelia.com/descargar/windows](https://survivelia.com/descargar/windows) | Unzip it and double-click **"Survivelia OS"** |
+| **macOS 11+** (Apple Silicon) | [survivelia.com/descargar/macos-arm64](https://survivelia.com/descargar/macos-arm64) | Unzip and open **"Survivelia OS"**. The first time: right-click → **Open** → **Open** |
+| **macOS 11+** (Intel) | [survivelia.com/descargar/macos-x64](https://survivelia.com/descargar/macos-x64) | Same as Apple Silicon |
+| **Linux** x64 | [survivelia.com/descargar/linux-x64](https://survivelia.com/descargar/linux-x64) | Unzip and open **`abrir-survival-os.sh`** (or `sh abrir-survival-os.sh`) |
+| **Linux** ARM (64-bit) | [survivelia.com/descargar/linux-arm64](https://survivelia.com/descargar/linux-arm64) | Same as Linux x64 |
+| **Android 10+** | [survivelia.com/descargar/android](https://survivelia.com/descargar/android) | Open the APK on the tablet or phone and allow "install unknown apps" |
+| **Raspberry Pi 5** (or Linux with systemd) | One command, below | Installs as a full-screen terminal |
+
+If a link does not respond, every file is on
+[GitHub Releases](https://github.com/crazyramirez/Survivelia-OS/releases/latest): `survival-os-X.Y.Z-portable-<system>.zip`,
+`-android-arm64.apk` and `survival-os-X.Y.Z.tar.gz` (Raspberry Pi). A single zip with all five systems, ideal for a
+USB drive that works on any computer: `survival-os-X.Y.Z-portable.zip`.
+
+**Raspberry Pi** (64-bit Raspberry Pi OS with desktop) **or any Linux with systemd**, in its terminal:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash
+sudo reboot
+```
+
+It downloads the latest version, **checks its signature and SHA-256** and installs it. It also updates: your data is
+kept. On a Linux other than the Pi, add `-s -- --no-kiosk` after `bash` (no full screen) and open it at
+`http://127.0.0.1:3000`.
+
+**Then, everywhere:** the [welcome screen](#first-run-set-everything-up-with-one-click) asks for language and country
+and, with **one click**, downloads everything (40–80 GB depending on language and country). You only need the
+Internet during the download.
+
+> **Your data is the `data` folder.** Books, maps, models and also the programs downloaded with them
+> (`data/components/`) live there. To move to another computer —also from Windows to macOS or Linux— or to a new
+> version, **copy the `data` folder into the new one**: when it opens, Survivelia OS downloads whatever that system
+> needs. Automatic updates never touch it.
+
+**Requirements:** 64-bit. Windows 10 or 11; macOS 11 or later; Linux with glibc 2.31 or later and a desktop (Debian
+11+, Ubuntu 20.04+, Fedora, Raspberry Pi OS Bullseye/Bookworm…); Android 10 or later. 8 GB of RAM for the assistant
+with its full model (with 3–4 GB it uses a lightweight one).
+
 ## Contents
 
+- [Install in two minutes](#install-in-two-minutes)
 - [What it is](#what-it-is)
 - [Express install: ask your AI assistant](#express-install-ask-your-ai-assistant)
 - [Choose how to use it](#choose-how-to-use-it)
@@ -135,13 +179,15 @@ All three versions share the same code and the same interface: what you learn on
 
 ### 1. Get the folder
 
-The portable version is a folder called **"Survivelia OS"** (about 590 MB; about 210 MB zipped). It includes
-everything needed for all five systems, Node included: there is nothing to install first.
+The portable version is a folder called **"Survivelia OS"**. It includes everything needed, Node included: there is
+nothing to install first.
 
-- **Download it** from the [latest release](https://github.com/crazyramirez/Survivelia-OS/releases/latest)
-  (`survival-os-X.Y.Z-portable.zip`) and unzip it wherever you like: a USB drive (exFAT works best), an external disk
-  or your user folder. For a polished USB drive (icon, name, "open on connect"), open it and use
-  System → Maintenance → **USB drive** → "Prepare a USB drive".
+- **Download it** for your system from the table in [Install in two minutes](#install-in-two-minutes) (about 50 MB)
+  or, for a USB drive that works on all five systems, `survival-os-X.Y.Z-portable.zip` (about 215 MB) from the
+  [latest release](https://github.com/crazyramirez/Survivelia-OS/releases/latest).
+- **Unzip it wherever you like:** a USB drive (exFAT works best), an external disk or your user folder. For a polished
+  USB drive (icon, name, "open on connect"), open it and use System → Maintenance → **USB drive** → "Prepare a USB drive".
+- **Already had Survivelia OS?** Copy your old `data` folder into the new one before opening it: you will have everything.
 - **If you are starting from the source code:** follow [Build the portable version](#build-the-portable-version) in
   the developer section; the result ends up in `release/portable/Survivelia OS/`.
 
@@ -215,32 +261,24 @@ Technical details: [ADR 0020](docs/adr/0020-app-android.md) (in Spanish).
 - A **microSD card or SSD of 128 GB or more** with **Raspberry Pi OS (Bookworm, 64-bit) with desktop**. The easiest
   way to prepare it is [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
 - A screen (tested with a 7" 1024×600 HDMI touch screen) and an Internet connection for the installation.
-- A computer with **Node 24.15 or later** to build the installation package.
 
 ### Install
 
-1. **On the computer**, build the package:
+1. **On the Pi**, open the Terminal (or log in over SSH) and run:
 
    ```sh
-   npm install
-   node scripts/fetch-map-assets.mjs        # map fonts and icons (first time only)
-   npm run build && npm run release         # → release/survival-os-X.Y.Z.tar.gz
+   curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash
    ```
 
-2. **Copy it to the Pi** together with the installer (replace `<user>` and `<IP>` with your Pi's):
+   It downloads the latest published version, checks its signature (Ed25519) and SHA-256, and installs it. The same
+   command updates an existing installation without touching your data. `… | sudo bash -s -- --comprobar` only
+   downloads and verifies.
 
-   ```sh
-   scp release/survival-os-*.tar.gz scripts/install-system.sh <user>@<IP>:/tmp/
-   ```
-
-3. **On the Pi**, install it:
-
-   ```sh
-   sudo bash /tmp/install-system.sh /tmp/survival-os-X.Y.Z.tar.gz
-   ```
-
-4. **Reboot the Pi.** It boots straight into Survivelia OS, full screen, with the
+2. **Reboot the Pi** (`sudo reboot`). It boots straight into Survivelia OS, full screen, with the
    [welcome screen](#first-run-set-everything-up-with-one-click).
+
+Prefer to do it from your computer, without typing on the Pi? `npm run express -- pi --host <IP> --user <user>
+--release --yes --reboot` (see [Express install](#express-install-ask-your-ai-assistant)), or ask your AI assistant.
 
 The installer:
 
@@ -252,8 +290,8 @@ The installer:
   and `logo.nologo` in `cmdline.txt`, with a backup);
 - keeps the previous version so you can roll back.
 
-Options: `--no-kiosk` (another Linux, no full screen) and `--no-branding` (keep the Raspberry Pi artwork). They are
-remembered for updates; `--kiosk` and `--branding` turn them back on. The artwork can also be applied or removed on
+Options, after `sudo bash -s --`: `--no-kiosk` (another Linux, no full screen) and `--no-branding` (keep the Raspberry
+Pi artwork). They are remembered for updates; `--kiosk` and `--branding` turn them back on. The artwork can also be applied or removed on
 its own: `sudo bash /opt/survival-os/current/scripts/pi-branding.sh` (or `--revert`; `--status` shows what is set).
 
 To uninstall: `sudo bash /opt/survival-os/current/scripts/uninstall-system.sh` (it also restores the Raspberry Pi
@@ -564,6 +602,18 @@ GitHub, on the Pi, the portable version and Android: **System → Maintenance**,
 
 Details in [ADR 0021](docs/adr/0021-actualizaciones-github.md) (in Spanish).
 
+### Moving your data to another computer or system
+
+Everything of yours is in the portable's **`data`** folder: books, maps, routes, assistant models, the vault, your
+notes and also the programs that were downloaded with them (`data/components/`).
+
+1. Download Survivelia OS for the new computer (Windows, macOS or Linux) and unzip it.
+2. Close Survivelia OS on the old computer and **copy its `data` folder** into the new one, replacing the one it ships.
+3. Open Survivelia OS. If the system is different (e.g. from Windows to Linux), it downloads that system's programs
+   by itself, with the Internet; the library repairs itself if needed.
+
+For the Pi or Android, use the backup below.
+
 ### USB and backups
 
 Everything from **System → Maintenance → USB and backups**, the same on the Pi and in the portable version.
@@ -654,6 +704,29 @@ node scripts/build-countries.mjs      # regenerate content/countries.json (Natur
 On Windows or macOS, during development, many device probes answer "unavailable (Linux only)". That is correct: the
 interface shows honest empty states. To see real data, use the Pi or the portable version.
 
+### Install on the Pi from source
+
+To try changes that are not published yet (you need Node 24.15 or later on the computer):
+
+```sh
+npm install
+node scripts/fetch-map-assets.mjs        # map fonts and icons (first time only)
+npm run build && npm run release         # → release/survival-os-X.Y.Z.tar.gz
+scp release/survival-os-*.tar.gz scripts/install-system.sh <user>@<IP>:/tmp/
+ssh <user>@<IP> sudo bash /tmp/install-system.sh /tmp/survival-os-X.Y.Z.tar.gz
+```
+
+Or all at once: `npm run express -- pi --host <IP> --user <user> --yes` (without `--release`, it builds this code).
+
+### Downloaded components
+
+The programs downloaded with the content (kiwix-tools, llama.cpp, Java and BRouter, pdftotext, pmtiles) are pinned in
+`content/catalog.json` with their SHA-256 and, in the portable, live in `data/components/<system>/`: they travel with
+the data and updates never touch them. On Windows, the portable ships the Visual C++ runtime that kiwix-tools and
+llama.cpp need (`runtime/win-x64/vcrt`). For Linux, Survivelia OS builds `llama-server` itself against glibc 2.31
+([scripts/build-llama-linux.sh](scripts/build-llama-linux.sh)); those packages are in the
+["components"](https://github.com/crazyramirez/Survivelia-OS/releases/tag/components) release, which is never deleted.
+
 ### Build the portable version
 
 ```sh
@@ -707,7 +780,8 @@ More details in [ADR 0017](docs/adr/0017-idiomas.md) (in Spanish).
 
 ## Status
 
-**v0.11.0.** Runs on a real Raspberry Pi 5 and in the portable version for Windows.
+**Version 0.14** ([what is new](CHANGELOG.md), in Spanish). Runs on a real Raspberry Pi 5 and in the portable version
+for Windows; the Linux portable is tested on Ubuntu (WSL) and the Linux ARM assistant with Debian 11 glibc.
 
 - **Verified on the Pi:** kiosk, maps, routing, library, PDF viewer, assistant, vault, LoRa mesh, backup time and
   languages.
@@ -716,7 +790,7 @@ More details in [ADR 0017](docs/adr/0017-idiomas.md) (in Spanish).
   - backups, import and update, tested with the real portable build.
 - **Verified on the Android emulator** (tablet, Android 16): startup, permissions, downloads, maps, routing,
   Wikipedia, assistant, GNSS and the loopback guard.
-- **Automated tests:** 358, plus screen tests on desktop and mobile.
+- **Automated tests:** over 490, plus screen tests on desktop and mobile.
 
 **Still to be tested:**
 

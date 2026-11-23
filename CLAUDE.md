@@ -27,6 +27,11 @@ Estado: v0.7.0, fases 0–7 validadas en la Pi salvo pruebas físicas (táctil, 
     `main`, `npm run release:publish -- --yes` **desde Bash, no PowerShell**: PowerShell se come el `--` y solo hace
     un ensayo). Siempre con los APK de Android.
   - **Después, borrar las releases antiguas** (`gh release delete vX.Y.Z --yes`): en GitHub queda solo la última.
+    **Nunca borrar la release `components`** (prerelease fija): el catálogo descarga de ahí el `llama-server` de Linux
+    que compila Survivelia OS (`scripts/build-llama-linux.sh <tag> <arm64|x64> <dir>`, en Linux/WSL sin root, con
+    zig; glibc 2.31). Al cambiar la versión de llama.cpp: compilar los dos, subirlos con `gh release upload
+    components`, y en `content/catalog.json` poner URL, SHA-256, tamaño y una `version` propia del asset
+    (`bNNNNN-svlN`) para que las instalaciones de Linux lo cambien solas.
     **Esperar al menos 11 minutos tras publicar** (o borrarla al publicar la siguiente): la landing cachea 10 min
     el enlace al APK y, si se borra antes, `/descargar/android` lleva a un APK que ya no existe.
   - **Y vincular la release en Survivelia Landing** (`../Survivelia Landing`): poner `version = 'X.Y.Z'` en
@@ -53,5 +58,10 @@ Estado: v0.7.0, fases 0–7 validadas en la Pi salvo pruebas físicas (táctil, 
 - Cambios de sistema en la Pi (systemd, kanshi, labwc, paquetes, EEPROM, red) solo con autorización explícita del usuario y plan de vuelta atrás.
 - En comandos remotos `pkill -f` usar patrón `[s]cripts/start.mjs` para no matar la propia sesión.
 - `packages/shared-types` solo tipos: los servicios compilados no lo tienen en runtime.
+- Portable: los componentes descargados viven en `data/components/<sistema>/` (`componentsDir`, no en `runtime/`):
+  viajan con `data` y las actualizaciones no los tocan. Windows: `portable/win/vcrt` (msvcp140, vcruntime140,
+  vcruntime140_1 de VS 2022, SHA-256 fijado en `release-portable.mjs`) va en `runtime/win-x64/vcrt` y se copia junto a
+  kiwix-tools y llama. Un componente nuevo con `.exe` necesita revisar sus DLL (`objdump -p` en WSL).
+- Una sola Survivelia OS por carpeta de datos (`data/launcher.lock` + `run.json`): no romper esa comprobación.
 - La lentitud original era de la instalación previa; la microSD solo da timeouts bajo estrés extremo. Vigilar contadores.
 - `pkill -f` remoto: anclar con `^` (el `[x]` falla si el nombre aparece en otra parte del comando).

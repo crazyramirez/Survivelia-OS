@@ -43,6 +43,21 @@ Pregunta solo lo que no sepas. Con estas respuestas eliges el camino:
 | ¿En qué **idioma** la quieres? (es, en, fr, it, de, zh, ja) | Ajustes por defecto |
 | ¿En qué **país** estás o vas a usarla? | Mapas y contenidos por defecto |
 | ¿Quieres **descargarlo todo** ahora? (suele ocupar 40–80 GB según idioma y país, y tardar horas; `download` da la cifra exacta) | Descargas |
+| ¿Tiene ya **datos de otra instalación** (una carpeta `data` de otra portable, aunque sea de otro sistema)? | Sección 4.1: se copian y no hay que volver a descargar nada |
+
+**Requisitos (dilos si dudas de que el equipo sirva):** 64 bits. Windows 10 u 11 (no necesita nada instalado: la
+portable trae Node y el runtime de Visual C++); macOS 11 o posterior; Linux con glibc 2.31 o posterior y escritorio
+(Debian 11+, Ubuntu 20.04+, Fedora, Raspberry Pi OS Bullseye/Bookworm); Raspberry Pi 5 con Raspberry Pi OS de 64
+bits; Android 10 o posterior. 8 GB de RAM para el asistente con su modelo completo (con 3–4 GB usa uno ligero).
+
+**Atajo sin repositorio ni Node** (si la persona solo quiere instalarlo y tú no puedes ejecutar `express`):
+
+- **Portable:** descargar el zip de su sistema de `https://survivelia.com/descargar/<windows|macos-arm64|macos-x64|linux-x64|linux-arm64>`
+  (o de las Releases de GitHub), descomprimir y abrir «Survivelia OS» (Linux: `abrir-survival-os.sh`).
+- **Raspberry Pi o Linux con systemd, en el propio equipo:**
+  `curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash`
+  (sección 5.3).
+- **Android:** `https://survivelia.com/descargar/android` en la tablet.
 
 Ejecuta todo **desde la raíz de este repositorio**. Si aún no lo tienes (la persona te lo pide desde otra carpeta):
 
@@ -154,6 +169,25 @@ Avisos que puedes dar:
 
 - **macOS:** la primera vez puede bloquearla porque no está firmada. Clic derecho → Abrir → Abrir.
 - **Linux:** si se ejecuta desde un USB montado sin permiso de ejecución, cópiala al disco.
+- **Solo hay una Survivelia OS abierta por carpeta:** abrirla otra vez solo abre otra ventana de la que ya está en
+  marcha (desde la 0.14.5).
+
+### 4.1 Llevar los datos a otra instalación, otro ordenador u otro sistema
+
+Todo lo de la persona está en la carpeta **`data`** de la portable: libros, mapas, rutas, modelos, bóveda, notas y
+también los programas que se descargan con los contenidos (`data/components/<sistema>/`: kiwix-tools, llama, Java,
+BRouter, pdftotext, pmtiles). Las actualizaciones nunca la tocan.
+
+1. Cierra Survivelia OS en el origen (`npm run express -- stop --dest "<carpeta origen>"`).
+2. Prepara la portable nueva (`portable --release --dest "<carpeta nueva>" --no-open`), o descomprime el zip.
+3. Copia la carpeta `data` del origen dentro de la nueva, **sustituyendo** la que trae (son muchos GB: avisa del
+   tiempo). Con `express` también vale: si el destino ya existe, `portable` conserva su `data/`.
+4. Abre la nueva. Si el sistema es otro (p. ej. de Windows a Linux), Survivelia OS **descarga solo** los programas
+   de ese sistema (necesita Internet esa primera vez) y repara la biblioteca. En `data/logs/launcher.log` queda
+   «Componente …: descargado de nuevo».
+
+Para una memoria USB «para todos los sistemas» (`--all-systems`): los programas de cada sistema se descargan la
+primera vez que se abre en él. Si se va a usar sin Internet, ábrela una vez con Internet en cada sistema.
 
 ---
 
@@ -196,6 +230,21 @@ Guía a la persona; esto no se puede hacer desde aquí:
   la clave.
 
 ### 5.3 Instalar (o actualizar)
+
+**En el propio equipo, sin ordenador ni Node** (la persona lo escribe en el Terminal de la Pi, o tú por SSH):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash -s -- --comprobar   # solo verificar
+curl -fsSL https://raw.githubusercontent.com/crazyramirez/Survivelia-OS/main/scripts/instalar.sh | sudo bash -s -- --no-kiosk    # otro Linux
+```
+
+Descarga el manifiesto de la última versión, **comprueba su firma Ed25519** (OpenSSL 3; en sistemas con OpenSSL 1.1
+avisa y se queda con HTTPS + SHA-256), descarga el paquete, comprueba su SHA-256 e instala con su `install-system.sh`.
+Si la firma o el SHA-256 no cuadran, no instala nada. Opciones: `--no-kiosk`, `--no-branding`, `--comprobar`. Después:
+`sudo reboot`.
+
+**Desde este ordenador por SSH, con `express`** (comprueba más cosas y deja la Pi verificada):
 
 ```sh
 npm run express -- pi --host <IP> --user <usuario> --release                 # comprueba y describe (no cambia nada)
@@ -395,6 +444,12 @@ cabecera `x-survival-action: 1`.
 | Mensajes «no disponible» en el panel de sistema | Normal en lo que no se puede medir (Probe honesto); no es un error |
 | Android: la app se cierra con la pantalla apagada | Batería sin restricciones e «Inicio automático» en los ajustes de la app (sección 6.3) |
 | Android: «GNSS: sin receptor» | Falta el permiso de ubicación (Mantenimiento → Android) o la tablet no tiene GPS |
+| Portable: Inicio dice «N libros instalados» pero la Biblioteca sale vacía | Versión antigua: actualizar a la última (`update --yes` o copiar `app`, `runtime`, el lanzador y `LEEME.txt` del zip nuevo sin tocar `data`). Al abrir, descarga lo que falte y repara la biblioteca. Mira `data/admin/content.log`: «kiwix-manage add: falta una DLL» era Windows sin Visual C++ (resuelto en 0.14.6) |
+| Portable Windows: «No se pudo actualizar … EPERM … rename …runtime» | Versión anterior a la 0.14.2 con un proceso suelto: **reiniciar el ordenador** y volver a actualizar |
+| Portable: «No se encuentra runtime\win-x64\node.exe» | Una actualización fallida de una versión antigua borró `runtime`: descargar el zip y copiar `app`, `runtime`, `Survivelia OS.exe` y `LEEME.txt` encima, sin tocar `data` |
+| Portable: abrir Survivelia OS abre dos ventanas | Versión anterior a la 0.14.5 (arrancaba otra copia): actualizar; cerrar las sobrantes con `stop` o reiniciando |
+| Un programa no arranca (asistente, rutas, biblioteca) | `data/logs/<servicio>.log` y `data/logs/launcher.log` dicen por qué («falta una DLL», «no se pudo descargar»…). Los componentes se reparan solos al abrir, con Internet |
+| «Hora no verificada» | En la Pi sin Internet ni GNSS ni pila: normal. En un PC o portátil, desde la 0.14.7 se muestra como hora del equipo |
 
 **Registros:**
 
@@ -459,6 +514,23 @@ npm run express -- update --yes
 ```
 
 En Android, actualizar es volver a ejecutar `android --release --yes`.
+
+**«Pásame mis descargas de este ordenador a otro»** (o de Windows a un Mac o a un Linux): sección 4.1. En resumen:
+cerrar, copiar la carpeta `data` a la portable nueva y abrirla con Internet la primera vez.
+
+**«Mi biblioteca sale vacía aunque descargué los libros»** (portable):
+
+```sh
+npm run express -- status --dest "<carpeta>"               # versión y estado
+npm run express -- update --dest "<carpeta>" --check       # ¿hay versión nueva? → confirmar
+npm run express -- update --dest "<carpeta>" --yes         # la versión nueva repara componentes y biblioteca al abrir
+```
+
+Si no se puede actualizar desde la app, sustituye `app`, `runtime`, el lanzador y `LEEME.txt` por los del zip nuevo
+sin tocar `data`. Comprueba después en `data/logs/launcher.log` las líneas «Componente …» y «Biblioteca: registrados …».
+
+**«Instálalo en mi Raspberry Pi» y la persona está delante de la Pi** (sin ordenador): que abra el Terminal y escriba
+el comando de una línea de la sección 5.3; luego `sudo reboot`.
 
 ---
 
