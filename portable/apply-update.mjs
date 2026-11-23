@@ -15,7 +15,7 @@
  * 4. Guarda la anterior en .previous (solo la última) y anota el resultado en data/update/last-apply.json.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve, sep, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -212,6 +212,49 @@ export async function applyUpdate(root, pid, { relaunchAfter = true, data = null
   return result
 }
 
+/**
+ * Pasa a la versión nueva los componentes descargados (runtime/<sistema>/kiwix-tools, llama, jre, brouter…): el zip
+ * solo trae Node, y al cambiar runtime/ se quedaban en .previous. Sin kiwix-tools la biblioteca salía vacía tras
+ * actualizar aunque los libros siguieran en data/. Se copia lo que falte en la nueva, por sistema. → lo pasado
+ */
+export async function carryComponents(root, old, log = () => undefined) {
+  const src = join(old, 'runtime')
+  const dst = join(root, 'runtime')
+  let keys = []
+  try {
+    keys = readdirSync(src)
+  } catch {
+    return []
+  }
+  const carried = []
+  for (const key of keys) {
+    const from = join(src, key)
+    const to = join(dst, key)
+    try {
+      if (!statSync(from).isDirectory()) continue
+    } catch {
+      continue
+    }
+    const names = existsSync(to) ? readdirSync(from).filter((n) => !existsSync(join(to, n))) : null
+    try {
+      if (names === null) {
+        mkdirSync(dst, { recursive: true })
+        await move(from, to)
+        carried.push(key)
+        continue
+      }
+      for (const n of names) {
+        await move(join(from, n), join(to, n))
+        carried.push(`${key}/${n}`)
+      }
+    } catch (err) {
+      log(`ERROR: no se pudo conservar un componente de ${key}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  if (carried.length) log(`componentes descargados conservados: ${carried.join(', ')}`)
+  return carried
+}
+
 /** Devuelve a la raíz lo que falte de .update/old y guarda el resto en .update-rescue (nunca lo borra). */
 export async function rescueOld(root, old, log = () => undefined) {
   let left = []
@@ -280,6 +323,7 @@ async function applyLocked(root, upd, dataDir, { selfTestImpl, leftoversImpl, lo
     return { ok: false, version: ready.version, message }
   }
   log('actualización aplicada')
+  await carryComponents(root, old, log)
   // La versión anterior se conserva en <raíz>/.previous para volver atrás a mano (como la Pi con su release
   // anterior); solo la última.
   const prev = join(root, '.previous')

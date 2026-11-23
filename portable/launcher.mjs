@@ -11,7 +11,7 @@
  *   node app/portable/launcher.mjs [--no-browser] [--install]
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { availableParallelism, homedir, networkInterfaces, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -716,7 +716,65 @@ async function repairLibrary() {
 }
 
 // En la autoprueba solo cuenta el núcleo: ni Wikipedia ni el asistente (cargar un modelo tarda y no se usa).
+/**
+ * Componentes descargados (kiwix-tools, llama, jre, brouter…) que constan como instalados pero faltan en runtime/:
+ * las actualizaciones hasta la 0.14.3 los dejaban en .previous al cambiar runtime/, y la biblioteca, el asistente o
+ * las rutas dejaban de funcionar aunque sus datos siguieran en data/. Se recuperan de .previous o, si no están, se
+ * vuelven a descargar en segundo plano (syncOptional los arranca en cuanto llegan).
+ */
+function restoreComponents() {
+  if (!key || ANDROID) return
+  let state = {}
+  try {
+    state = JSON.parse(readFileSync(join(DATA, 'content-state.json'), 'utf8'))
+  } catch {
+    return
+  }
+  const missing = Object.entries(state.components ?? {})
+    .filter(([c, v]) => v?.platform === key && /^[a-z0-9-]+$/.test(c) && !existsSync(join(ROOT, 'runtime', key, c, '.version')))
+    .map(([c]) => c)
+  const download = []
+  for (const c of missing) {
+    const prev = join(ROOT, '.previous', 'runtime', key, c)
+    if (existsSync(join(prev, '.version'))) {
+      try {
+        cpSync(prev, join(ROOT, 'runtime', key, c), { recursive: true })
+        say(`Componente ${c}: recuperado de la versión anterior`)
+        continue
+      } catch (err) {
+        say(`Componente ${c}: ${err instanceof Error ? err.message : err}`)
+      }
+    }
+    download.push(c)
+  }
+  if (!download.length) return
+  void (async () => {
+    try {
+      const eng = await import('../scripts/content-engine.mjs')
+      const catalog = eng.loadCatalog()
+      const paths = eng.profilePaths('portable', ROOT)
+      for (const c of download) {
+        if (!catalog.components?.[c]) continue
+        try {
+          await eng.ensureComponent(catalog, paths, c)
+          say(`Componente ${c}: descargado de nuevo`)
+        } catch (err) {
+          say(`Componente ${c}: no se pudo descargar (${err instanceof Error ? err.message : err}); se reintentará al abrir`)
+        }
+      }
+      await repairLibrary()
+    } catch (err) {
+      say(`Componentes: ${err instanceof Error ? err.message : err}`)
+    }
+  })()
+}
+
 if (!SELF_TEST) {
+  try {
+    restoreComponents()
+  } catch (err) {
+    say(`Componentes: ${err instanceof Error ? err.message : err}`)
+  }
   void repairLibrary().finally(() => {
     syncOptional()
     setInterval(syncOptional, 10_000).unref()

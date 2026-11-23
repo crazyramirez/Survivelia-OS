@@ -415,6 +415,20 @@ describe('apply-update: autoprueba y vuelta atrás (portable)', () => {
     expect(existsSync(path.join(root, 'runtime'))).toBe(true)
   }, 60_000)
 
+  it('los componentes descargados (kiwix-tools…) pasan a la versión nueva: el zip solo trae Node', async () => {
+    const root = prepared('componentes')
+    mkdirSync(path.join(root, 'runtime', 'win-x64', 'kiwix-tools'), { recursive: true })
+    writeFileSync(path.join(root, 'runtime', 'win-x64', 'kiwix-tools', '.version'), '3.8.2\n')
+    mkdirSync(path.join(root, 'runtime', 'linux-x64'), { recursive: true })
+    writeFileSync(path.join(root, 'runtime', 'linux-x64', 'node'), 'otro sistema')
+    const r = await apply.applyUpdate(root, 0, { relaunchAfter: false, data: path.join(root, 'data'), selfTestImpl: async () => true, leftoversImpl: () => [] })
+    expect(r.ok).toBe(true)
+    expect(read(root, 'runtime/win-x64/node.exe')).toBe('node nuevo')
+    expect(read(root, 'runtime/win-x64/kiwix-tools/.version')).toBe('3.8.2\n')
+    expect(read(root, 'runtime/linux-x64/node')).toBe('otro sistema')
+    expect(read(root, '.previous/runtime/win-x64/node.exe')).toBe('node viejo')
+  })
+
   it('lo que falte en la raíz vuelve desde .update/old', async () => {
     const root = path.join(tmp, 'apply-falta')
     const old = path.join(root, '.update', 'old')

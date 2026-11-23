@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.4 — 2026-11-23 · Los libros dejaban de abrirse tras actualizar la portable
+
+### Corregido
+- **Tras actualizar la portable, la biblioteca salía vacía (o el lector no mostraba nada) aunque los libros siguieran
+  descargados.** Los componentes que se descargan con los contenidos (el servidor de libros Kiwix, el asistente, Java
+  y BRouter para las rutas…) viven en `runtime/`, y cada actualización cambiaba `runtime/` por el del zip, que solo
+  trae Node: se quedaban en `.previous` y Wikipedia, el asistente o las rutas dejaban de funcionar.
+  - Al actualizar, los componentes descargados pasan a la versión nueva.
+  - **Las instalaciones ya afectadas se arreglan solas al abrir:** lo que conste como instalado y falte se recupera de
+    la versión anterior o, si ya no está, se vuelve a descargar (con Internet).
+
 ## 0.14.3 — 2026-11-23 · La actualización nunca borra la versión anterior
 
 ### Corregido
